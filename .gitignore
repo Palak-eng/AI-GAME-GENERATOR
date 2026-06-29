@@ -1,0 +1,68 @@
+# ==========================
+# Python
+# ==========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ==========================
+# Virtual Environment
+# ==========================
+venv/
+env/
+.venv/
+
+# ==========================
+# Environment Variables
+# ==========================
+.env
+
+# ==========================
+# IDE
+# ==========================
+.vscode/
+.idea/
+
+# ==========================
+# OS Files
+# ==========================
+.DS_Store
+Thumbs.db
+
+# ==========================
+# Python Build
+# ==========================
+build/
+dist/
+*.egg-info/
+
+# ==========================
+# Logs
+# ==========================
+*.log
+
+# ==========================
+# Streamlit
+# ==========================
+.streamlit/secrets.toml
+
+# ==========================
+# Generated Games
+# (Uncomment if you don't want
+# generated games on GitHub)
+# ==========================
+# generated_games/
+
+# ==========================
+# Generated Assets
+# (Uncomment if AI generates
+# images automatically later)
+# ==========================
+# generated_assets/
+
+# ==========================
+# Test Cache
+# ==========================
+.pytest_cache/
+.coverage
+htmlcov/
