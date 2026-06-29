@@ -51,7 +51,7 @@ dist/
 # (Uncomment if you don't want
 # generated games on GitHub)
 # ==========================
-# generated_games/
+ generated_games
 
 # ==========================
 # Generated Assets
