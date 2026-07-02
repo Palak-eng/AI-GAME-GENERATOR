@@ -83,14 +83,14 @@ class Player:
         # Body (Tunic)
         body_rect = pygame.Rect(self.x - self.size, self.y - self.size, self.size * 2, self.size * 2)
         pygame.draw.ellipse(surface, AMETHYST, body_rect)
-
+        
         # Head
         pygame.draw.circle(surface, PEARL, (self.x, self.y - self.size - 10), self.size // 2)
-
+        
         # Arms
         pygame.draw.line(surface, PEARL, (self.x - self.size + 5, self.y - self.size + 10), (self.x - self.size - 10, self.y - 5), 4)
         pygame.draw.line(surface, PEARL, (self.x + self.size - 5, self.y - self.size + 10), (self.x + self.size + 10, self.y - 5), 4)
-
+        
         # Legs
         pygame.draw.line(surface, AMETHYST, (self.x - self.size // 2, self.y + self.size - 5), (self.x - self.size // 2, self.y + self.size + 15), 5)
         pygame.draw.line(surface, AMETHYST, (self.x + self.size // 2, self.y + self.size - 5), (self.x + self.size // 2, self.y + self.size + 15), 5)
@@ -122,7 +122,7 @@ class Player:
             self.trail.append((self.x, self.y))
             if len(self.trail) > self.trail_length:
                 self.trail.pop(0)
-
+        
         # Rapid fire power-up check
         if self.rapid_fire_active and pygame.time.get_ticks() > self.rapid_fire_end_time:
             self.rapid_fire_active = False
@@ -173,10 +173,10 @@ class GigglingGoblin:
     def draw(self, surface):
         # Body (large circle)
         pygame.draw.circle(surface, FOREST_GREEN, (self.x, self.y), self.size)
-
+        
         # Head (smaller circle)
         pygame.draw.circle(surface, FOREST_GREEN, (self.x, self.y - self.size - 10), self.size * 0.7)
-
+        
         # Ears (triangles)
         pygame.draw.polygon(surface, FOREST_GREEN, [
             (self.x - self.size * 0.7 - 5, self.y - self.size - 15),
@@ -188,11 +188,11 @@ class GigglingGoblin:
             (self.x + self.size * 0.7 - 5, self.y - self.size - 25),
             (self.x + self.size * 0.7 - 10, self.y - self.size - 15)
         ])
-
+        
         # Eyes (dots)
         pygame.draw.circle(surface, RUBY, (self.x - self.size * 0.3, self.y - self.size - 15), 3)
         pygame.draw.circle(surface, RUBY, (self.x + self.size * 0.3, self.y - self.size - 15), 3)
-
+        
         # Club (line + circle)
         pygame.draw.line(surface, SILVER, (self.x + self.size + 5, self.y - 5), (self.x + self.size + 15, self.y + 10), 5)
         pygame.draw.circle(surface, SILVER, (self.x + self.size + 15, self.y + 10), 8)
@@ -203,7 +203,7 @@ class GigglingGoblin:
 
         if self.x < self.size or self.x > WIDTH - self.size:
             self.speed_x *= -1
-
+        
         if self.y > HEIGHT + self.size: # Off screen
             return True
         return False
@@ -274,11 +274,11 @@ class EnchantedScroll:
         # Scroll body (rounded rect)
         scroll_rect = pygame.Rect(self.x - self.width // 2, self.y - self.height // 2, self.width, self.height)
         pygame.draw.rect(surface, GOLD, scroll_rect, border_radius=5)
-
+        
         # Rolled ends (ellipses)
         pygame.draw.ellipse(surface, TOPAZ, (self.x - self.width // 2 - 2, self.y - self.height // 2, self.width + 4, 5))
         pygame.draw.ellipse(surface, TOPAZ, (self.x - self.width // 2 - 2, self.y + self.height // 2 - 5, self.width + 4, 5))
-
+        
         # Seal (circle + polygon)
         pygame.draw.circle(surface, RUBY, (self.x + self.width // 4, self.y + self.height // 4), 6)
         seal_star_points = [
@@ -391,12 +391,12 @@ def draw_text_with_shadow(surface, text, font, color, shadow_color, x, y):
 def draw_health_bar(surface, x, y, width, height, current_health, max_health):
     # Background (rounded rect)
     pygame.draw.rect(surface, DARK_SAPPHIRE, (x, y, width, height), border_radius=5)
-
+    
     # Fill
     fill_width = (current_health / max_health) * width
     health_color = EMERALD if current_health > max_health * 0.5 else RUBY
     pygame.draw.rect(surface, health_color, (x, y, fill_width, height), border_radius=5)
-
+    
     # Border (white)
     pygame.draw.rect(surface, PEARL, (x, y, width, height), 2, border_radius=5)
 
@@ -410,7 +410,7 @@ def draw_game_over_screen(surface):
     draw_text_with_shadow(surface, "GAME OVER", font_large, RUBY, DARK_SAPPHIRE,
                           WIDTH // 2 - font_large.size("GAME OVER")[0] // 2,
                           HEIGHT // 2 - 50)
-
+    
     # Final Score
     draw_text_with_shadow(surface, f"Score: {score}", font_medium, GOLD, DARK_SAPPHIRE,
                           WIDTH // 2 - font_medium.size(f"Score: {score}")[0] // 2,
@@ -451,7 +451,7 @@ while running:
             else: # 30% chance for wisp
                 enemies.append(WobblingWisp(enemy_x, -50))
             enemy_spawn_timer = now
-
+        
         enemies_to_remove = []
         for i, e in enumerate(enemies):
             if e.update(): # If enemy goes off screen
@@ -467,7 +467,7 @@ while running:
         # Update powerups
         if random.random() < 0.0015 and len(powerups) < 1: # Small chance to spawn a powerup
             powerups.append(EnchantedScroll(random.randint(50, WIDTH - 50), -50))
-
+        
         powerups_to_remove = []
         for i, p in enumerate(powerups):
             if p.update():
@@ -491,7 +491,7 @@ while running:
                         for _ in range(random.randint(8, 12)):
                             explosion_particles.append(Particle(e.x, e.y, random.choice([RUBY, GOLD, CRIMSON_GLOW])))
                     break # Projectile hits only one enemy
-
+        
         # Remove hit projectiles and dead enemies
         projectiles = [p for i, p in enumerate(projectiles) if i not in projectiles_to_remove]
         enemies = [e for i, e in enumerate(enemies) if i not in enemies_to_remove]
@@ -551,16 +551,16 @@ while running:
 
         for p in projectiles:
             p.draw(SCREEN)
-
+        
         for e in enemies:
             e.draw(SCREEN)
 
         for pu in powerups:
             pu.draw(SCREEN)
-
+        
         for p in explosion_particles:
             p.draw(SCREEN)
-
+        
         for sp in score_popups:
             sp.draw(SCREEN)
 
@@ -573,7 +573,7 @@ while running:
             flash_surface = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
             flash_surface.fill((RUBY[0], RUBY[1], RUBY[2], screen_flash_alpha))
             SCREEN.blit(flash_surface, (0, 0))
-
+            
             if pygame.time.get_ticks() - screen_flash_start_time > screen_flash_duration:
                 screen_flash_alpha = 0
             else:
