@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import os
 import uuid
 from generator import generate_game, GameGenerationError
@@ -150,7 +151,7 @@ if st.button("⚡ Generate My Game!", use_container_width=True):
                 # Save file in a per-session folder so concurrent users don't collide
                 out_dir = os.path.join("generated_games", st.session_state.session_id)
                 os.makedirs(out_dir, exist_ok=True)
-                out_path = os.path.join(out_dir, "game.py")
+                out_path = os.path.join(out_dir, "game.html")
                 with open(out_path, "w", encoding="utf-8") as f:
                     f.write(code)
 
@@ -181,16 +182,31 @@ if st.session_state.result:
         unsafe_allow_html=True
     )
 
-    st.success(f"🎉 Game ready! Run it locally with: `python {result['path']}`")
+    st.success("🎉 Game ready! Play it right below — click the canvas first so your keyboard controls work.")
 
-    st.download_button(
-        "⬇️ Download game.py",
-        data=result["code"],
-        file_name="game.py",
-        mime="text/plain",
-        use_container_width=True,
-        key="download_game_btn",
+    # ── Playable game, embedded live in the app ─────────────────────────────
+    components.html(result["code"], height=650, scrolling=False)
+
+    replay_col, download_col = st.columns(2)
+    with replay_col:
+        if st.button("🔁 Play Again (reload)", use_container_width=True):
+            st.rerun()
+    with download_col:
+        st.download_button(
+            "⬇️ Save game.html",
+            data=result["code"],
+            file_name="game.html",
+            mime="text/html",
+            use_container_width=True,
+            key="download_game_btn",
+        )
+
+    st.caption(
+        "💾 **Save it:** the download is a single `game.html` file — keep it anywhere on your "
+        "computer or phone and double-click it anytime to play again, no install needed.\n\n"
+        "📤 **Share it:** send that same `game.html` file to a friend on WhatsApp, email, or "
+        "Google Drive — they can open it straight in their browser and play too, on any device."
     )
 
     with st.expander("👨‍💻 View the generated code"):
-        st.code(result["code"], language="python")
+        st.code(result["code"], language="html")

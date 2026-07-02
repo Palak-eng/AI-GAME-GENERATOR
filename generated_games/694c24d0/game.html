@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rosie's Royal Bloom</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #1a1a2e; /* Dark background for the page */
+            font-family: 'Arial', sans-serif;
+            color: #fff;
+        }
+        canvas {
+            display: block;
+            border: 5px solid #6a0dad; /* A nice jewel-tone border */
+            box-shadow: 0 0 20px rgba(106, 13, 173, 0.8);
+            background-color: #333; /* Fallback, will be drawn over by canvas background */
+        }
+    </style>
+</head>
+<body>
+    <canvas id="game" width="800" height="600"></canvas>
+    <script>
+        (function() {
+            const canvas = document.getElementById('game');
+            const ctx = canvas.getContext('2d');
+
+            // --- COLOR PALETTE (Rule 4: Jewel Tones) ---
+            const COLOR_PRIMARY = '#8B00FF';    // Dark Violet
+            const COLOR_SECONDARY = '#FF1493';  // Deep Pink
+            const COLOR_TERTIARY = '#00CED1';   // Dark Turquoise
+            const COLOR_ACCENT_1 = '#FFD700';   // Gold
+            const COLOR_ACCENT_2 = '#FF4500';   // Orange Red
+            const COLOR_PLATFORM = '#32CD32';   // Lime Green
+            const COLOR_SKY_LIGHT = '#1E90FF';  // Dodger Blue
+            const COLOR_SKY_DARK = '#00008B';   // Dark Blue
+            const COLOR_TEXT = '#FF69B4';       // Hot Pink
+            const COLOR_TEXT_SHADOW = '#8B00FF'; // Dark Violet for shadow
+            const COLOR_HEALTH_BAR_BG = '#4A0000'; // Dark Red for health bar background
+            const COLOR_HEALTH_BAR_FILL = '#FF0000'; // Bright Red for health bar fill
+            const COLOR_PARTICLE_BLOOM = '#FFD700'; // Gold for bloom particles
+            const COLOR_PARTICLE_BAT = '#800080'; // Purple for bat particles
+
+            // --- GAME CONSTANTS ---
+            const CANVAS_WIDTH = canvas.width;
+            const CANVAS_HEIGHT = canvas.height;
+            const GRAVITY = 0.6;
+            const JUMP_VELOCITY = -12;
+            const PLAYER_SPEED = 5;
+            const PLAYER_SIZE = 30; // Base size for player character
+            const PLATFORM_HEIGHT = 20;
+            const PLATFORM_MIN_WIDTH = 100;
+            const PLATFORM_MAX_WIDTH = 250;
+            const ENEMY_SPAWN_INTERVAL = 2000; // ms
+            const POWERUP_SPAWN_INTERVAL = 5000; // ms
+            const MAX_ENEMIES = 5;
+            const MAX_POWERUPS = 2;
+            const MAX_PARTICLES = 100;
+            const MAX_SCORE_POPUPS = 10;
+            const PLAYER_TRAIL_LENGTH = 8;
+
+            // --- GAME STATE ---
+            let player;
+            let platforms = [];
+            let enemies = [];
+            let powerUps = [];
+            let particles = [];
+            let scorePopups = [];
+            let playerTrail = [];
+            let score = 0;
+            let lives = 3;
+            let gameOver = false;
+            let lastEnemySpawnTime = 0;
+            let lastPowerUpSpawnTime = 0;
+            let difficultyMultiplier = 1; // Increases over time
+            let screenFlashTimer = 0;
+            let lastFrameTime = 0;
+
+            // --- INPUT STATE ---
+            const keys = {
+                ArrowLeft: false,
+                ArrowRight: false,
+                KeyA: false,
+                KeyD: false,
+                Space: false,
+                ArrowUp: false,
+                KeyW: false
+            };
+            let touchActive = false;
+            let touchJump = false;
+            let touchMoveDir = 0; // -1 for left, 1 for right, 0 for none
+
+            // --- HELPER FUNCTIONS ---
+            function randomRange(min, max) {
+                return Math.random() * (max - min) + min;
+            }
+
+            function distance(x1, y1, x2, y2) {
+                const dx = x1 - x2;
+                const dy = y1 - y2;
+                return Math.sqrt(dx * dx + dy * dy);
+            }
+
+            function rectIntersect(r1, r2) {
+                return r1.x < r2.x + r2.width &&
+                       r1.x + r1.width > r2.x &&
+                       r1.y < r2.y + r2.height &&
+                       r1.y + r1.height > r2.y;
+            }
+
+            // --- GAME OBJECTS ---
+
+            // Player Character (Rosie the Fairy) - Rule 1
+            class Player {
+                constructor(x, y) {
+                    this.x = x;
+                    this.y = y;
+                    this.width = PLAYER_SIZE;
+                    this.height = PLAYER_SIZE * 1.5;
+                    this.dx = 0;
+                    this.dy = 0;
+                    this.onGround = false;
+                    this.facingRight = true;
+                    this.isHit = false;
+                    this.hitTimer = 0;
+                    this.maxHitTime = 60; // Frames of invincibility
+                }
+
+                draw() {
+                    const headRadius = this.width / 4;
+                    const bodyWidth = this.width * 0.7;
+                    const bodyHeight = this.height * 0.7;
+                    const wingWidth = this.width * 0.6;
+                    const wingHeight = this.height * 0.4;
+
+                    ctx.save();
+                    ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
+                    if (!this.facingRight) {
+                        ctx.scale(-1, 1); // Flip horizontally
+                    }
+
+                    // Glow effect (Rule 3)
+                    for (let i = 0; i < 3; i++) {
+                        ctx.beginPath();
+                        ctx.arc(0, -this.height * 0.35, headRadius + i * 1, 0, Math.PI * 2); // Head
+                        ctx.ellipse(0, this.height * 0.05, bodyWidth / 2 + i * 1, bodyHeight / 2 + i * 1, 0, 0, Math.PI * 2); // Body
+                        
+                        // Wings
+                        ctx.moveTo(wingWidth, -wingHeight * 0.5);
+                        ctx.bezierCurveTo(wingWidth * 1.5, -wingHeight * 1.5, wingWidth * 0.5, -wingHeight * 2, 0, -wingHeight * 1.5);
+                        ctx.bezierCurveTo(-wingWidth * 0.5, -wingHeight * 2, -wingWidth * 1.5, -wingHeight * 1.5, -wingWidth, -wingHeight * 0.5);
+                        ctx.bezierCurveTo(-wingWidth * 1.5, wingHeight * 0.5, -wingWidth * 0.5, wingHeight * 1.5, 0, wingHeight * 1);
+                        ctx.bezierCurveTo(wingWidth * 0.5, wingHeight * 1.5, wingWidth * 1.5, wingHeight * 0.5, wingWidth, -wingHeight * 0.5);
+                        
+                        ctx.fillStyle = `rgba(255, 255, 255, ${0.1 * (3 - i)})`; // Fading glow
+                        ctx.fill();
+                    }
+
+                    // Main body
+                    ctx.beginPath();
+                    // Head
+                    ctx.arc(0, -this.height * 0.35, headRadius, 0, Math.PI * 2);
+                    ctx.fillStyle = '#FFB6C1'; // Light pink skin
+                    ctx.fill();
+                    ctx.strokeStyle = COLOR_PRIMARY;
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+
+                    // Body (rounded rectangle-like)
+                    ctx.beginPath();
+                    ctx.ellipse(0, this.height * 0.05, bodyWidth / 2, bodyHeight / 2, 0, 0, Math.PI * 2);
+                    ctx.fillStyle = COLOR_SECONDARY; // Deep Pink dress
+                    ctx.fill();
+                    ctx.strokeStyle = COLOR_PRIMARY;
+                    ctx.stroke();
+
+                    // Wings (bezierCurveTo for soft, fluttery look)
+                    ctx.beginPath();
+                    ctx.moveTo(wingWidth, -wingHeight * 0.5);
+                    ctx.bezierCurveTo(wingWidth * 1.5, -wingHeight * 1.5, wingWidth * 0.5, -wingHeight * 2, 0, -wingHeight * 1.5);
+                    ctx.bezierCurveTo(-wingWidth * 0.5, -wingHeight * 2, -wingWidth * 1.5, -wingHeight * 1.5, -wingWidth, -wingHeight * 0.5);
+                    ctx.bezierCurveTo(-wingWidth * 1.5, wingHeight * 0.5, -wingWidth * 0.5, wingHeight * 1.5, 0, wingHeight * 1);
+                    ctx.bezierCurveTo(wingWidth * 0.5, wingHeight * 1.5, wingWidth * 1.5, wingHeight * 0.5, wingWidth, -wingHeight * 0.5);
+                    ctx.closePath();
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'; // Translucent white wings
+                    ctx.fill();
+                    ctx.strokeStyle = COLOR_TERTIARY;
+                    ctx.stroke();
+
+                    // Antennae
+                    ctx.beginPath();
+                    ctx.moveTo(-headRadius * 0.5, -this.height * 0.35 - headRadius);
+                    ctx.lineTo(-headRadius * 0.8, -this.height * 0.35 - headRadius * 1.5);
+                    ctx.arc(-headRadius * 0.8, -this.height * 0.35 - headRadius * 1.6, 2, 0, Math.PI * 2);
+                    ctx.moveTo(headRadius * 0.5, -this.height * 0.35 - headRadius);
+                    ctx.lineTo(headRadius * 0.8, -this.height * 0.35 - headRadius * 1.5);
+                    ctx.arc(headRadius * 0.8, -this.height * 0.35 - headRadius * 1.6, 2, 0, Math.PI * 2);
+                    ctx.strokeStyle = COLOR_ACCENT_1;
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke();
+                    ctx.fillStyle = COLOR_ACCENT_1;
+                    ctx.fill();
+
+                    // Eyes
+                    ctx.beginPath();
+                    ctx.arc(-headRadius * 0.3, -this.height * 0.35 - headRadius * 0.2, 2, 0, Math.PI * 2);
+                    ctx.arc(headRadius * 0.3, -this.height * 0.35 - headRadius * 0.2, 2, 0, Math.PI * 2);
+                    ctx.fillStyle = 'black';
+                    ctx.fill();
+
+                    ctx.restore();
+
+                    // Flicker effect when hit
+                    if (this.isHit && Math.floor(this.hitTimer / 5) % 2 === 0) {
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+                        ctx.fillRect(this.x, this.y, this.width, this.height);
+                    }
+                }
+
+                update() {
+                    this.dy += GRAVITY;
+                    this.x += this.dx;
+                    this.y += this.dy;
+
+                    if (this.isHit) {
+                        this.hitTimer++;
+                        if (this.hitTimer >= this.maxHitTime) {
+                            this.isHit = false;
+                            this.hitTimer = 0;
+                        }
+                    }
+
+                    // Horizontal movement
+                    this.dx = 0;
+                    if (keys.ArrowLeft || keys.KeyA || touchMoveDir === -1) {
+                        this.dx = -PLAYER_SPEED * difficultyMultiplier;
+                        this.facingRight = false;
+                    }
+                    if (keys.ArrowRight || keys.KeyD || touchMoveDir === 1) {
+                        this.dx = PLAYER_SPEED * difficultyMultiplier;
+                        this.facingRight = true;
+                    }
+
+                    // Jump
+                    if ((keys.Space || keys.ArrowUp || keys.KeyW || touchJump) && this.onGround) {
+                        this.dy = JUMP_VELOCITY;
+                        this.onGround = false;
+                        touchJump = false; // Reset touch jump
+                    }
+
+                    // Keep player within canvas bounds
+                    if (this.x < 0) this.x = 0;
+                    if (this.x + this.width > CANVAS_WIDTH) this.x = CANVAS_WIDTH - this.width;
+
+                    // Update trail (Rule 3)
+                    playerTrail.push({ x: this.x + this.width / 2, y: this.y + this.height / 2, alpha: 1 });
+                    if (playerTrail.length > PLAYER_TRAIL_LENGTH) {
+                        playerTrail.shift();
+                    }
+                }
+
+                takeHit() {
+                    if (!this.isHit) {
+                        lives--;
+                        this.isHit = true;
+                        this.hitTimer = 0;
+                        screenFlashTimer = 15; // Activate screen flash (Rule 3)
+                    }
+                    if (lives <= 0) {
+                        gameOver = true;
+                    }
+                }
+            }
+
+            // Platform - Rule 1
+            class Platform {
+                constructor(x, y, width) {
+                    this.x = x;
+                    this.y = y;
+                    this.width = width;
+                    this.height = PLATFORM_HEIGHT;
+                }
+
+                draw() {
+                    const radius = 8; // For rounded corners
+                    ctx.beginPath();
+                    ctx.moveTo(this.x + radius, this.y);
+                    ctx.lineTo(this.x + this.width - radius, this.y);
+                    ctx.arcTo(this.x + this.width, this.y, this.x + this.width, this.y + radius, radius);
+                    ctx.lineTo(this.x + this.width, this.y + this.height - radius);
+                    ctx.arcTo(this.x + this.width, this.y + this.height, this.x + this.width - radius, this.y + this.height, radius);
+                    ctx.lineTo(this.x + radius, this.y + this.height);
+                    ctx.arcTo(this.x, this.y + this.height, this.x, this.y + this.height - radius, radius);
+                    ctx.lineTo(this.x, this.y + radius);
+                    ctx.arcTo(this.x, this.y, this.x + radius, this.y, radius);
+                    ctx.closePath();
+
+                    // Gradient for a mossy/grassy look
+                    const gradient = ctx.createLinearGradient(this.x, this.y, this.x, this.y + this.height);
+                    gradient.addColorStop(0, COLOR_PLATFORM);
+                    gradient.addColorStop(0.5, COLOR_PLATFORM);
+                    gradient.addColorStop(1, '#228B22'); // Darker green
+                    ctx.fillStyle = gradient;
+                    ctx.fill();
+                    ctx.strokeStyle = '#006400'; // Dark green border
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+
+                    // Simple texture lines
+                    ctx.beginPath();
+                    for (let i = 0; i < this.width; i += 10) {
+                        ctx.moveTo(this.x + i, this.y + this.height / 2);
+                        ctx.lineTo(this.x + i + 5, this.y + this.height);
+                    }
+                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                }
+            }
+
+            // Bramble Bat Enemy - Rule 1
+            class BrambleBat {
+                constructor(x, y) {
+                    this.x = x;
+                    this.y = y;
+                    this.width = 40;
+                    this.height = 30;
+                    this.dx = randomRange(-1, 1) * 2 * difficultyMultiplier;
+                    this.dy = randomRange(-1, 1) * 1 * difficultyMultiplier;
+                    this.speed = 2 * difficultyMultiplier;
+                    this.health = 1;
+                    this.angle = Math.random() * Math.PI * 2; // For wave movement
+                    this.amplitude = 20; // For wave movement
+                    this.frequency = 0.05; // For wave movement
+                }
+
+                draw() {
+                    ctx.save();
+                    ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
+                    if (this.dx < 0) ctx.scale(-1, 1); // Flip horizontally if moving left
+
+                    // Body (ellipse)
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, this.width / 2.5, this.height / 2.5, 0, 0, Math.PI * 2);
+                    ctx.fillStyle = '#800080'; // Purple bat body
+                    ctx.fill();
+                    ctx.strokeStyle = '#4B0082'; // Indigo border
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+
+                    // Wings (bezierCurveTo for jagged bat wings)
+                    const wingSpan = this.width * 0.8;
+                    const wingFold = this.height * 0.3;
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0); // Center of bat
+                    ctx.lineTo(wingSpan, -wingFold);
+                    ctx.lineTo(wingSpan * 0.8, -wingFold * 2);
+                    ctx.lineTo(wingSpan * 0.4, -wingFold * 1.5);
+                    ctx.lineTo(0, -wingFold * 2.5); // Top point
+                    ctx.lineTo(-wingSpan * 0.4, -wingFold * 1.5);
+                    ctx.lineTo(-wingSpan * 0.8, -wingFold * 2);
+                    ctx.lineTo(-wingSpan, -wingFold);
+                    ctx.lineTo(0, 0);
+                    ctx.closePath();
+                    ctx.fillStyle = 'rgba(128, 0, 128, 0.7)'; // Slightly transparent purple wings
+                    ctx.fill();
+                    ctx.strokeStyle = '#4B0082';
+                    ctx.stroke();
+
+                    // Ears (triangles)
+                    ctx.beginPath();
+                    ctx.moveTo(-this.width * 0.1, -this.height * 0.4);
+                    ctx.lineTo(-this.width * 0.25, -this.height * 0.6);
+                    ctx.lineTo(-this.width * 0.4, -this.height * 0.4);
+                    ctx.closePath();
+                    ctx.moveTo(this.width * 0.1, -this.height * 0.4);
+                    ctx.lineTo(this.width * 0.25, -this.height * 0.6);
+                    ctx.lineTo(this.width * 0.4, -this.height * 0.4);
+                    ctx.closePath();
+                    ctx.fillStyle = '#4B0082';
+                    ctx.fill();
+                    ctx.strokeStyle = '#2F004F';
+                    ctx.stroke();
+
+                    // Eyes (circles)
+                    ctx.beginPath();
+                    ctx.arc(-this.width * 0.15, -this.height * 0.15, 3, 0, Math.PI * 2);
+                    ctx.arc(this.width * 0.15, -this.height * 0.15, 3, 0, Math.PI * 2);
+                    ctx.fillStyle = COLOR_ACCENT_2; // Orange Red eyes
+                    ctx.fill();
+
+                    ctx.restore();
+                }
+
+                update() {
+                    this.x += this.dx;
+                    this.y += this.dy;
+
+                    // Simple bounce off walls
+                    if (this.x < 0 || this.x + this.width > CANVAS_WIDTH) {
+                        this.dx *= -1;
+                    }
+                    if (this.y < 0 || this.y + this.height > CANVAS_HEIGHT * 0.7) { // Limit bats to top 70% of screen
+                        this.dy *= -1;
+                    }
+
+                    // Add a slight wave to movement
+                    this.y += Math.sin(this.angle) * this.amplitude * 0.05;
+                    this.angle += this.frequency * difficultyMultiplier;
+                }
+            }
+
+            // Spiky Snail Enemy - Rule 1
+            class SpikySnail {
+                constructor(x, y, platform) {
+                    this.x = x;
+                    this.y = y - 5; // Adjust for snail height
+                    this.width = 45;
+                    this.height = 30;
+                    this.dx = randomRange(0, 1) > 0.5 ? 1 : -1; // Start moving left or right
+                    this.dx *= 1 * difficultyMultiplier;
+                    this.platform = platform; // The platform it's on
+                    this.health = 1;
+                }
+
+                draw() {
+                    ctx.save();
+                    ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
+                    if (this.dx < 0) ctx.scale(-1, 1); // Flip horizontally if moving left
+
+                    // Shell (arc + bezierCurveTo for spiral)
+                    ctx.beginPath();
+                    ctx.arc(0, -this.height * 0.2, this.width * 0.3, Math.PI * 0.5, Math.PI * 2.5); // Base circle for shell
+                    ctx.fillStyle = '#696969'; // Gray shell
+                    ctx.fill();
+                    ctx.strokeStyle = '#36454F'; // Charcoal border
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+
+                    // Spiral pattern on shell
+                    ctx.beginPath();
+                    ctx.arc(0, -this.height * 0.2, this.width * 0.25, Math.PI * 0.5, Math.PI * 2.5, true);
+                    ctx.arc(0, -this.height * 0.2, this.width * 0.15, Math.PI * 0.5, Math.PI * 2.5, false);
+                    ctx.arc(0, -this.height * 0.2, this.width * 0.05, Math.PI * 0.5, Math.PI * 2.5, true);
+                    ctx.strokeStyle = '#4F4F4F';
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke();
+
+                    // Spikes on shell (lineTo triangles)
+                    const spikeCount = 5;
+                    const shellRadius = this.width * 0.3;
+                    for (let i = 0; i < spikeCount; i++) {
+                        const angle = Math.PI * 0.5 + (i / spikeCount) * Math.PI * 2;
+                        const x1 = shellRadius * Math.cos(angle);
+                        const y1 = shellRadius * Math.sin(angle) - this.height * 0.2;
+                        const x2 = (shellRadius + 5) * Math.cos(angle + 0.1);
+                        const y2 = (shellRadius + 5) * Math.sin(angle + 0.1) - this.height * 0.2;
+                        const x3 = (shellRadius + 5) * Math.cos(angle - 0.1);
+                        const y3 = (shellRadius + 5) * Math.sin(angle - 0.1) - this.height * 0.2;
+
+                        ctx.beginPath();
+                        ctx.moveTo(x1, y1);
+                        ctx.lineTo(x2, y2);
+                        ctx.lineTo(x3, y3);
+                        ctx.closePath();
+                        ctx.fillStyle = '#A9A9A9'; // Light gray spikes
+                        ctx.fill();
+                        ctx.strokeStyle = '#696969';
+                        ctx.stroke();
+                    }
+
+                    // Body (ellipse)
+                    ctx.beginPath();
+                    ctx.ellipse(-this.width * 0.1, this.height * 0.1, this.width * 0.2, this.height * 0.15, 0, 0, Math.PI * 2);
+                    ctx.fillStyle = '#7CFC00'; // Lawn green body
+                    ctx.fill();
+                    ctx.strokeStyle = '#556B2F'; // Dark olive green border
+                    ctx.stroke();
+
+                    // Antennae (moveTo/lineTo + arc)
+                    ctx.beginPath();
+                    ctx.moveTo(this.width * 0.1, -this.height * 0.1);
+                    ctx.lineTo(this.width * 0.2, -this.height * 0.3);
+                    ctx.arc(this.width * 0.2, -this.height * 0.35, 2, 0, Math.PI * 2);
+                    ctx.moveTo(this.width * 0.05, -this.height * 0.05);
+                    ctx.lineTo(this.width * 0.15, -this.height * 0.25);
+                    ctx.arc(this.width * 0.15, -this.height * 0.3, 2, 0, Math.PI * 2);
+                    ctx.strokeStyle = '#556B2F';
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke();
+                    ctx.fillStyle = 'black';
+                    ctx.fill();
+
+                    ctx.restore();
+                }
+
+                update() {
+                    this.x += this.dx;
+
+                    // Check if it's about to fall off the platform
+                    if (this.x < this.platform.x || this.x + this.width > this.platform.x + this.platform.width) {
+                        this.dx *= -1;
+                        this.x = Math.max(this.platform.x, Math.min(this.x, this.platform.x + this.platform.width - this.width)); // Snap to edge
+                    }
+                }
+            }
+
+            // Sparkle Bloom Power-Up - Rule 1 & Rule 3 (Glow)
+            class SparkleBloom {
+                constructor(x, y) {
+                    this.x = x;
+                    this.y = y;
+                    this.radius = 15;
+                    this.dy = 0;
+                    this.angle = Math.random() * Math.PI * 2;
+                    this.amplitude = 5;
+                    this.frequency = 0.05;
+                    this.collected = false;
+                }
+
+                draw() {
+                    if (this.collected) return;
+
+                    ctx.save();
+                    ctx.translate(this.x, this.y);
+
+                    // Glow effect (Rule 3: radial gradient + multiple draws)
+                    const glowRadius = this.radius * 2;
+                    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, glowRadius);
+                    gradient.addColorStop(0, `rgba(255, 215, 0, 0.8)`); // Gold center
+                    gradient.addColorStop(0.5, `rgba(255, 215, 0, 0.4)`);
+                    gradient.addColorStop(1, `rgba(255, 215, 0, 0)`);
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, glowRadius, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Petals (bezierCurveTo)
+                    const petalCount = 8;
+                    const petalLength = this.radius * 1.5;
+                    const petalWidth = this.radius * 0.8;
+                    ctx.beginPath();
+                    for (let i = 0; i < petalCount; i++) {
+                        const angle = (i / petalCount) * Math.PI * 2;
+                        const x = Math.cos(angle) * this.radius * 0.5;
+                        const y = Math.sin(angle) * this.radius * 0.5;
+                        ctx.moveTo(x, y);
+                        const ctrl1X = x + Math.cos(angle - 0.5) * petalWidth;
+                        const ctrl1Y = y + Math.sin(angle - 0.5) * petalWidth;
+                        const ctrl2X = x + Math.cos(angle + 0.5) * petalWidth;
+                        const ctrl2Y = y + Math.sin(angle + 0.5) * petalWidth;
+                        const endX = x + Math.cos(angle) * petalLength;
+                        const endY = y + Math.sin(angle) * petalLength;
+                        ctx.bezierCurveTo(ctrl1X, ctrl1Y, ctrl2X, ctrl2Y, endX, endY);
+                    }
+                    ctx.closePath();
+                    ctx.fillStyle = COLOR_ACCENT_1; // Gold petals
+                    ctx.fill();
+                    ctx.strokeStyle = COLOR_ACCENT_2;
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+
+                    // Center (arc with radial gradient)
+                    const centerGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, this.radius * 0.8);
+                    centerGradient.addColorStop(0, 'white');
+                    centerGradient.addColorStop(1, COLOR_ACCENT_1);
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.radius * 0.6, 0, Math.PI * 2);
+                    ctx.fillStyle = centerGradient;
+                    ctx.fill();
+                    ctx.strokeStyle = COLOR_ACCENT_2;
+                    ctx.stroke();
+
+                    ctx.restore();
+                }
+
+                update() {
+                    this.y += Math.sin(this.angle) * this.amplitude * 0.05;
+                    this.angle += this.frequency;
+                }
+            }
+
+            // Explosion Particles - Rule 3
+            class Particle {
+                constructor(x, y, color) {
+                    this.x = x;
+                    this.y = y;
+                    this.radius = randomRange(2, 5);
+                    this.dx = randomRange(-3, 3);
+                    this.dy = randomRange(-3, 3);
+                    this.life = 60; // frames
+                    this.color = color;
+                }
+
+                draw() {
+                    ctx.globalAlpha = this.life / 60;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                    ctx.fillStyle = this.color;
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+                }
+
+                update() {
+                    this.x += this.dx;
+                    this.y += this.dy;
+                    this.dy += GRAVITY * 0.2; // Little gravity
+                    this.life--;
+                }
+            }
+
+            // Score Popup - Rule 3
+            class ScorePopup {
+                constructor(x, y, text, color = COLOR_ACCENT_1) {
+                    this.x = x;
+                    this.y = y;
+                    this.text = text;
+                    this.color = color;
+                    this.dy = -1; // Rises
+                    this.life = 90; // frames
+                }
+
+                draw() {
+                    ctx.globalAlpha = this.life / 90;
+                    ctx.font = 'bold 20px Arial';
+                    ctx.fillStyle = COLOR_TEXT_SHADOW; // Shadow first
+                    ctx.fillText(this.text, this.x + 2, this.y + 2);
+                    ctx.fillStyle = this.color;
+                    ctx.fillText(this.text, this.x, this.y);
+                    ctx.globalAlpha = 1;
+                }
+
+                update() {
+                    this.y += this.dy;
+                    this.life--;
+                }
+            }
+
+            // --- GAME INITIALIZATION & RESET ---
+            function initGame() {
+                player = new Player(CANVAS_WIDTH / 2 - PLAYER_SIZE / 2, CANVAS_HEIGHT - PLATFORM_HEIGHT - PLAYER_SIZE * 1.5);
+                platforms = [];
+                enemies = [];
+                powerUps = [];
+                particles = [];
+                scorePopups = [];
+                playerTrail = [];
+                score = 0;
+                lives = 3;
+                gameOver = false;
+                lastEnemySpawnTime = 0;
+                lastPowerUpSpawnTime = 0;
+                difficultyMultiplier = 1;
+                screenFlashTimer = 0;
+                lastFrameTime = performance.now();
+
+                // Create initial platforms
+                // Ground platform
+                platforms.push(new Platform(0, CANVAS_HEIGHT - PLATFORM_HEIGHT, CANVAS_WIDTH));
+
+                // Random platforms
+                for (let i = 0; i < 8; i++) {
+                    let platWidth = randomRange(PLATFORM_MIN_WIDTH, PLATFORM_MAX_WIDTH);
+                    let platX = randomRange(0, CANVAS_WIDTH - platWidth);
+                    let platY = randomRange(CANVAS_HEIGHT * 0.2, CANVAS_HEIGHT * 0.8 - PLATFORM_HEIGHT);
+
+                    // Ensure platforms don't overlap too much
+                    let overlapping = false;
+                    for (const existingPlat of platforms) {
+                        if (rectIntersect({x: platX, y: platY, width: platWidth, height: PLATFORM_HEIGHT}, existingPlat)) {
+                            overlapping = true;
+                            break;
+                        }
+                    }
+                    if (!overlapping) {
+                        platforms.push(new Platform(platX, platY, platWidth));
+                    }
+                }
+            }
+
+            // --- DRAWING FUNCTIONS ---
+
+            // Draw Background (Rule 2: Gradient Sky + clouds)
+            function drawBackground() {
+                const skyGradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+                skyGradient.addColorStop(0, COLOR_SKY_LIGHT);
+                skyGradient.addColorStop(1, COLOR_SKY_DARK);
+                ctx.fillStyle = skyGradient;
+                ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+                // Clouds (Rule 2: Tiled pattern - repeating shapes)
+                const cloudColor = 'rgba(255, 255, 255, 0.7)';
+                const cloudSpacing = 150;
+                const cloudSpeed = 0.5 * difficultyMultiplier;
+                const cloudOffset = (performance.now() * 0.001 * cloudSpeed) % cloudSpacing;
+
+                for (let i = -1; i < CANVAS_WIDTH / cloudSpacing + 1; i++) {
+                    for (let j = 0; j < 3; j++) { // 3 layers of clouds
+                        const x = (i * cloudSpacing + cloudOffset) % (CANVAS_WIDTH + cloudSpacing) - cloudSpacing;
+                        const y = j * 100 + 50;
+
+                        // Draw individual cloud
+                        ctx.fillStyle = cloudColor;
+                        ctx.beginPath();
+                        ctx.arc(x, y, 20, 0, Math.PI * 2);
+                        ctx.arc(x + 25, y, 25, 0, Math.PI * 2);
+                        ctx.arc(x + 50, y, 20, 0, Math.PI * 2);
+                        ctx.arc(x + 15, y - 15, 20, 0, Math.PI * 2);
+                        ctx.arc(x + 40, y - 10, 15, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+            }
+
+            // Draw Player Trail (Rule 3)
+            function drawPlayerTrail() {
+                for (let i = 0; i < playerTrail.length; i++) {
+                    const trail = playerTrail[i];
+                    ctx.globalAlpha = trail.alpha * (i / playerTrail.length) * 0.5; // Fade over time
+                    ctx.beginPath();
+                    ctx.arc(trail.x, trail.y, PLAYER_SIZE * 0.2 * (i / playerTrail.length), 0, Math.PI * 2);
+                    ctx.fillStyle = COLOR_PRIMARY;
+                    ctx.fill();
+                }
+                ctx.globalAlpha = 1;
+            }
+
+            function drawUI() {
+                // Score (Rule 5: Shadow text)
+                ctx.font = 'bold 30px Arial';
+                ctx.fillStyle = COLOR_TEXT_SHADOW;
+                ctx.fillText(`Score: ${score}`, 12, 32);
+                ctx.fillStyle = COLOR_TEXT;
+                ctx.fillText(`Score: ${score}`, 10, 30);
+
+                // Lives (Rule 5: Health bar)
+                const barX = CANVAS_WIDTH - 160;
+                const barY = 20;
+                const barWidth = 130;
+                const barHeight = 25;
+                const barRadius = 5;
+
+                // Health bar background (rounded rect)
+                ctx.beginPath();
+                ctx.roundRect(barX, barY, barWidth, barHeight, barRadius);
+                ctx.fillStyle = COLOR_HEALTH_BAR_BG;
+                ctx.fill();
+
+                // Health bar fill
+                const fillWidth = (lives / 3) * barWidth; // Assuming max 3 lives
+                ctx.beginPath();
+                ctx.roundRect(barX, barY, fillWidth, barHeight, barRadius);
+                ctx.fillStyle = COLOR_HEALTH_BAR_FILL;
+                ctx.fill();
+
+                // Health bar border (white)
+                ctx.beginPath();
+                ctx.roundRect(barX, barY, barWidth, barHeight, barRadius);
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Lives text (on top of bar)
+                ctx.font = 'bold 20px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillStyle = COLOR_TEXT_SHADOW;
+                ctx.fillText(`Lives: ${lives}`, barX + barWidth / 2 + 1, barY + barHeight / 2 + 8 + 1);
+                ctx.fillStyle = 'white';
+                ctx.fillText(`Lives: ${lives}`, barX + barWidth / 2, barY + barHeight / 2 + 8);
+                ctx.textAlign = 'left'; // Reset text alignment
+            }
+
+            // Game Over Screen (Rule 5)
+            function drawGameOver() {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'; // Semi-transparent dark overlay
+                ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+                ctx.textAlign = 'center';
+                ctx.font = 'bold 60px Arial';
+                ctx.fillStyle = COLOR_TEXT_SHADOW;
+                ctx.fillText('GAME OVER', CANVAS_WIDTH / 2 + 3, CANVAS_HEIGHT / 2 - 40 + 3);
+                ctx.fillStyle = COLOR_ACCENT_2; // Orange Red
+                ctx.fillText('GAME OVER', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 40);
+
+                ctx.font = 'bold 30px Arial';
+                ctx.fillStyle = COLOR_TEXT_SHADOW;
+                ctx.fillText(`Final Score: ${score}`, CANVAS_WIDTH / 2 + 2, CANVAS_HEIGHT / 2 + 20 + 2);
+                ctx.fillStyle = COLOR_ACCENT_1; // Gold
+                ctx.fillText(`Final Score: ${score}`, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 20);
+
+                ctx.font = '24px Arial';
+                ctx.fillStyle = COLOR_TEXT_SHADOW;
+                ctx.fillText('Press R or tap to restart', CANVAS_WIDTH / 2 + 1, CANVAS_HEIGHT / 2 + 80 + 1);
+                ctx.fillStyle = 'white';
+                ctx.fillText('Press R or tap to restart', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 80);
+                ctx.textAlign = 'left';
+            }
+
+            // --- GAME LOOP ---
+            function updateGame(deltaTime) {
+                if (gameOver) return;
+
+                // Update difficulty over time
+                difficultyMultiplier = 1 + Math.floor(score / 500) * 0.1;
+                difficultyMultiplier = Math.min(difficultyMultiplier, 2.5); // Cap difficulty
+
+                player.update();
+
+                // Player-platform collision
+                player.onGround = false;
+                for (const platform of platforms) {
+                    if (rectIntersect(player, platform)) {
+                        if (player.dy > 0 && player.y + player.height - player.dy <= platform.y) {
+                            player.y = platform.y - player.height;
+                            player.dy = 0;
+                            player.onGround = true;
+                        } else if (player.dy < 0 && player.y - player.dy >= platform.y + platform.height) {
+                            player.y = platform.y + platform.height;
+                            player.dy = 0;
+                        }
+                    }
+                }
+                if (player.y + player.height > CANVAS_HEIGHT) { // Fall off bottom
+                    player.y = CANVAS_HEIGHT - player.height;
+                    player.dy = 0;
+                    player.onGround = true;
+                    player.takeHit(); // Lose a life if falling off the map
+                }
+
+
+                // Spawn enemies
+                if (performance.now() - lastEnemySpawnTime > ENEMY_SPAWN_INTERVAL / difficultyMultiplier && enemies.length < MAX_ENEMIES * difficultyMultiplier) {
+                    const type = Math.random() > 0.5 ? 'bat' : 'snail';
+                    if (type === 'bat') {
+                        enemies.push(new BrambleBat(randomRange(0, CANVAS_WIDTH - 40), randomRange(0, CANVAS_HEIGHT * 0.5)));
+                    } else {
+                        // Spawn snail on a random platform (excluding ground)
+                        const elevatedPlatforms = platforms.filter(p => p.y < CANVAS_HEIGHT - PLATFORM_HEIGHT);
+                        if (elevatedPlatforms.length > 0) {
+                            const platform = elevatedPlatforms[Math.floor(randomRange(0, elevatedPlatforms.length))];
+                            enemies.push(new SpikySnail(randomRange(platform.x, platform.x + platform.width - 45), platform.y, platform));
+                        }
+                    }
+                    lastEnemySpawnTime = performance.now();
+                }
+
+                // Update enemies
+                for (let i = enemies.length - 1; i >= 0; i--) {
+                    const enemy = enemies[i];
+                    enemy.update();
+
+                    // Player-enemy collision
+                    if (!player.isHit && rectIntersect(player, enemy)) {
+                        player.takeHit();
+                    }
+                }
+
+                // Spawn power-ups
+                if (performance.now() - lastPowerUpSpawnTime > POWERUP_SPAWN_INTERVAL / difficultyMultiplier && powerUps.length < MAX_POWERUPS) {
+                    // Spawn power-up on a random platform
+                    const platform = platforms[Math.floor(randomRange(0, platforms.length))];
+                    powerUps.push(new SparkleBloom(randomRange(platform.x + 10, platform.x + platform.width - 10), platform.y - 20));
+                    lastPowerUpSpawnTime = performance.now();
+                }
+
+                // Update power-ups
+                for (let i = powerUps.length - 1; i >= 0; i--) {
+                    const powerUp = powerUps[i];
+                    powerUp.update();
+
+                    // Player-powerup collision
+                    if (distance(player.x + player.width / 2, player.y + player.height / 2, powerUp.x, powerUp.y) < player.width / 2 + powerUp.radius) {
+                        score += 100;
+                        scorePopups.push(new ScorePopup(powerUp.x, powerUp.y, '+100', COLOR_ACCENT_1));
+                        // Small chance to gain a life
+                        if (Math.random() < 0.2 && lives < 3) {
+                            lives++;
+                            scorePopups.push(new ScorePopup(powerUp.x, powerUp.y - 20, '+1 Life', 'white'));
+                        }
+                        powerUps.splice(i, 1);
+                    }
+                }
+
+                // Update particles
+                for (let i = particles.length - 1; i >= 0; i--) {
+                    const p = particles[i];
+                    p.update();
+                    if (p.life <= 0) {
+                        particles.splice(i, 1);
+                    }
+                }
+
+                // Update score popups
+                for (let i = scorePopups.length - 1; i >= 0; i--) {
+                    const popup = scorePopups[i];
+                    popup.update();
+                    if (popup.life <= 0) {
+                        scorePopups.splice(i, 1);
+                    }
+                }
+
+                // Screen flash countdown (Rule 3)
+                if (screenFlashTimer > 0) {
+                    screenFlashTimer--;
+                }
+            }
+
+            function drawGame() {
+                ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+                drawBackground();
+
+                for (const platform of platforms) {
+                    platform.draw();
+                }
+
+                for (const enemy of enemies) {
+                    enemy.draw();
+                }
+
+                for (const powerUp of powerUps) {
+                    powerUp.draw();
+                }
+
+                player.draw();
+                drawPlayerTrail();
+
+                for (const particle of particles) {
+                    particle.draw();
+                }
+
+                for (const popup of scorePopups) {
+                    popup.draw();
+                }
+
+                drawUI();
+
+                if (screenFlashTimer > 0) { // Rule 3: Screen flash
+                    ctx.fillStyle = `rgba(255, 0, 0, ${screenFlashTimer / 30})`; // Fade out flash
+                    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                }
+
+                if (gameOver) {
+                    drawGameOver();
+                }
+            }
+
+            function gameLoop(currentTime) {
+                const deltaTime = (currentTime - lastFrameTime) / 1000; // in seconds
+                lastFrameTime = currentTime;
+
+                updateGame(deltaTime);
+                drawGame();
+
+                requestAnimationFrame(gameLoop);
+            }
+
+            // --- INPUT HANDLERS ---
+            function handleKeyDown(event) {
+                if (gameOver && event.key === 'r') {
+                    initGame();
+                    return;
+                }
+                keys[event.key] = true;
+            }
+
+            function handleKeyUp(event) {
+                keys[event.key] = false;
+            }
+
+            function handleTouchStart(event) {
+                event.preventDefault(); // Prevent scrolling/zooming
+                touchActive = true;
+                if (gameOver) {
+                    initGame();
+                    return;
+                }
+
+                const touch = event.touches[0];
+                const touchX = touch.clientX - canvas.offsetLeft;
+                const touchY = touch.clientY - canvas.offsetTop;
+
+                // Simple touch controls:
+                // Left half of screen for left movement, right for right
+                // Tap anywhere for jump
+                if (touchX < CANVAS_WIDTH / 2) {
+                    touchMoveDir = -1;
+                } else {
+                    touchMoveDir = 1;
+                }
+                touchJump = true; // Any tap triggers jump
+            }
+
+            function handleTouchMove(event) {
+                event.preventDefault();
+                if (!touchActive) return;
+
+                const touch = event.touches[0];
+                const touchX = touch.clientX - canvas.offsetLeft;
+                if (touchX < CANVAS_WIDTH / 2) {
+                    touchMoveDir = -1;
+                } else {
+                    touchMoveDir = 1;
+                }
+            }
+
+            function handleTouchEnd(event) {
+                event.preventDefault();
+                touchActive = false;
+                touchMoveDir = 0;
+                touchJump = false;
+            }
+
+            // --- EVENT LISTENERS ---
+            window.addEventListener('keydown', handleKeyDown);
+            window.addEventListener('keyup', handleKeyUp);
+            canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+            canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+            canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+
+            // Initialize and start the game
+            initGame();
+            requestAnimationFrame(gameLoop);
+        })();
+    </script>
+</body>
+</html>

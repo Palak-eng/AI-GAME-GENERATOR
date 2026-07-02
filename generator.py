@@ -2,7 +2,9 @@ from google import genai
 from dotenv import load_dotenv
 import os
 import re
-import ast
+import subprocess
+import tempfile
+import shutil
 
 load_dotenv()
 
@@ -50,7 +52,6 @@ def _extract_text(response) -> str:
     """
     text = getattr(response, "text", None)
     if text is None or not text.strip():
-        # Try to surface *why* it was empty (e.g. safety block) if available
         reason = None
         try:
             candidates = getattr(response, "candidates", None)
@@ -91,39 +92,60 @@ def enhance_prompt(user_prompt: str) -> str:
     )
 
 
-# ─── Game Generator ───────────────────────────────────────────────────────────
+# ─── Game Generator (HTML5 Canvas — runs instantly in any browser) ──────────
+# We generate a SINGLE self-contained .html file (inline <style> + <script>,
+# no external assets) so it:
+#   1) plays instantly inside the app (embedded in an iframe)
+#   2) can be downloaded as one file and re-opened / replayed anytime
+#   3) can be shared with a friend (WhatsApp/email/Drive) — they just
+#      double-click it and it opens in their browser, no installs needed.
 
-SYSTEM_PROMPT = """You are a senior Python game developer who makes VISUALLY STUNNING Pygame games.
-These games are for kids — they must look colorful, exciting, and polished.
+SYSTEM_PROMPT = """You are a senior HTML5 game developer who makes VISUALLY STUNNING browser games
+using the Canvas 2D API and vanilla JavaScript. These games are for kids — they must look
+colorful, exciting, and polished, and must run by simply opening an HTML file in a browser.
+
+════════════════════════════════════════════════
+ OUTPUT FORMAT — CRITICAL
+════════════════════════════════════════════════
+- Output ONE complete, self-contained HTML document. Nothing else.
+- Structure: <!DOCTYPE html><html>...<head><style>...</style></head><body>
+  <canvas id="game" width="800" height="600"></canvas><script>...</script></body></html>
+- Everything (CSS + JS) must be INLINE in that one file. No external libraries, no CDN links,
+  no external images/fonts/audio files (use Web Audio API oscillators if you want sound, optional).
+- Zero markdown. Zero backticks. Zero explanations before or after the HTML.
+- The very last line of your output must be </html>.
+- CRITICAL: Code must be 100% complete and runnable. Never stop halfway.
 
 ════════════════════════════════════════════════
  GRAPHICS — THIS IS THE MOST IMPORTANT SECTION
 ════════════════════════════════════════════════
 
 RULE 1 — NO PLAIN RECTANGLES FOR CHARACTERS:
-Every character, enemy, player, boss, power-up MUST be drawn with at least 3-4 pygame.draw calls combined.
-Examples of what a player can look like:
-  - Spaceship: triangle body (polygon) + 2 small wing triangles + circle cockpit + engine glow circle
-  - Character: circle head + rounded body (ellipse) + 2 line arms + 2 line legs
+Every character, enemy, player, boss, power-up MUST be drawn with at least 3-4 canvas draw calls combined
+(arc, moveTo/lineTo paths, bezierCurveTo, etc.) — never a single fillRect.
+Examples:
+  - Spaceship: polygon body (ctx.beginPath + lineTo triangle) + 2 small wing triangles + circle cockpit (arc) + engine glow (radial gradient circle)
+  - Character: circle head (arc) + rounded body (ellipse or rounded rect) + line arms + line legs
   - Animal: large circle body + small circle head + triangle ears + dot eyes
 
 RULE 2 — RICH BACKGROUNDS (never solid black or white):
-Choose ONE of these background styles and implement it fully:
-  Option A — Gradient: draw 600 horizontal lines, color interpolated from top_color to bottom_color
-  Option B — Starfield: 150 random white/yellow dots of varying sizes (1-3px) scattered across screen
-  Option C — Tiled pattern: draw repeating shapes (clouds, bricks, grass tiles, hex grid) across screen
+Choose ONE of these and implement it fully:
+  Option A — Gradient sky: ctx.createLinearGradient across the canvas height
+  Option B — Starfield: 150 randomly placed white/yellow dots of varying sizes (1-3px), redrawn each frame
+  Option C — Tiled pattern: repeating shapes (clouds, bricks, grass tiles, hex grid) across the canvas
   Option D — Layered parallax: 2-3 layers of simple shapes scrolling at different speeds
 
 RULE 3 — PARTICLES & EFFECTS:
-You MUST include at least 2 of these effects:
-  - Explosion particles: on enemy death, spawn 8-12 small circles flying outward, fading over 0.5s
-  - Glow effect: draw same shape 3x in decreasing size, lightest color first (outer glow → bright center)
-  - Screen flash: on player hit, briefly fill screen with semi-transparent red overlay (alpha surface)
-  - Trail effect: store last 5 positions of player/bullet, draw fading circles along the path
+Include at least 2 of these:
+  - Explosion particles: on enemy death, spawn 8-12 small circles flying outward, fading over ~0.5s (track particle objects in an array, update + draw each frame)
+  - Glow effect: draw the same shape 2-3x with decreasing size/increasing alpha (radial gradient or shadowBlur)
+  - Screen flash: on player hit, briefly fill canvas with a semi-transparent red rectangle
+  - Trail effect: store the last 5 positions of the player/bullet, draw fading circles along the path
   - Score popup: floating "+100" text that rises and fades when scoring
 
 RULE 4 — COLOR PALETTE:
-Define at least 8 named color constants at the top. Use jewel tones, neons, or pastels — never just red/green/blue.
+Define at least 8 named color constants (JS consts, hex strings) at the top of the script.
+Use jewel tones, neons, or pastels — never just red/green/blue.
 Example palettes:
   Neon: #FF00FF, #00FFFF, #FF6600, #00FF66, #FFD700, #FF0055, #0066FF, #CCFF00
   Jewel: #8B00FF, #FF1493, #00CED1, #FFD700, #FF4500, #32CD32, #1E90FF, #FF69B4
@@ -132,37 +154,43 @@ Example palettes:
 RULE 5 — UI POLISH:
   - Score/lives text: draw shadow first (dark color, +2px offset), then bright text on top
   - Health bar: rounded rect background (dark) + colored fill + white border
-  - Game Over screen: semi-transparent dark overlay + big styled text + "Press R to restart" hint
+  - Game Over screen: semi-transparent dark overlay + big styled text + "Press R or tap to restart" hint
 
 ════════════════════════════════
  GAMEPLAY REQUIREMENTS
 ════════════════════════════════
-- Fun and immediately playable by a child
+- Fun and immediately playable by a child, mouse/touch AND keyboard both work
 - Scoring system shown on screen at all times
 - Clear win condition OR survive-as-long-as-possible with high score
 - At least 2 different enemy/obstacle types with different behaviors
 - At least 1 power-up or bonus item
-- Controls: arrow keys or WASD, SPACE to shoot/jump
+- Controls: Arrow keys or WASD for movement, SPACE to shoot/jump. ALSO support click/tap
+  (so it works on phones/tablets when a friend opens the shared file)
 - Difficulty increases over time (enemies get faster, more spawn, etc.)
-- "Press R to restart" after Game Over
-- Keep all themes child-friendly and cartoonish, even for "survival" or "battle" ideas — no realistic violence or gore
+- On Game Over: show "Press R or tap Restart button to play again" — clicking/tapping restarts
+  the game WITHOUT needing to reload the page (reset all game state variables and resume the loop)
+- REPLAYABILITY IS CRITICAL: the restart must fully reset score, entities, and difficulty so the
+  SAME file can be played again and again with no reload
+- Keep all themes child-friendly and cartoonish, even for "survival" or "battle" ideas — no
+  realistic violence or gore
 
 ════════════════════════════════
  CODE REQUIREMENTS
 ════════════════════════════════
-- Output ONLY raw Python code. Zero markdown. Zero backticks. Zero explanations.
-- First lines must be: import pygame, import sys, import random, import math
-- Call pygame.init() early, set caption with pygame.display.set_caption()
-- 60 FPS with clock.tick(60)
-- Window: 800x600
-- CRITICAL: Code must be 100% complete. Must end with the running game loop. Never stop halfway.
-- No empty function bodies. No placeholder comments like "# draw enemy here".
+- Use requestAnimationFrame for the game loop (not setInterval)
+- canvas width=800 height=600, set via the <canvas> tag attributes
+- Add a viewport meta tag and a little CSS so the canvas is centered with a dark page background
+  (so it looks good full-screen when opened directly)
+- document.title should be a short fun name for the game
+- No empty function bodies, no placeholder comments — every function fully implemented
+- Wrap the game in an IIFE or DOMContentLoaded listener so it runs immediately on file open
 
 ABSOLUTELY FORBIDDEN:
 - Single-color rectangles for any game character or enemy
 - Solid black/white background with no detail
-- Any non-Python text in output
-- Incomplete code that cuts off
+- Any external script/link/image/font references (must be 100% self-contained, works offline)
+- Any non-HTML/CSS/JS text in output
+- Incomplete code that cuts off before </html>
 """
 
 MAX_CONTINUATIONS = 2
@@ -177,33 +205,81 @@ def clean_code(text: str) -> str:
     return text.strip()
 
 
+def _node_syntax_check(js_code: str):
+    """
+    Runs `node --check` on extracted JS to catch real syntax errors (unclosed
+    braces/brackets/strings, cut-off statements, etc).
+    Returns True (valid), False (invalid), or None if Node isn't available or
+    the check itself couldn't run — in which case we don't penalize the code.
+    """
+    node_path = shutil.which("node")
+    if not node_path:
+        return None
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".js", delete=False, encoding="utf-8"
+        ) as f:
+            f.write(js_code)
+            tmp_path = f.name
+        result = subprocess.run(
+            [node_path, "--check", tmp_path],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return result.returncode == 0
+    except Exception:
+        return None
+    finally:
+        if tmp_path:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+
 def is_code_complete(code: str) -> bool:
     """
-    Heuristic completeness check. Also verifies the code actually parses as
-    valid Python — substring checks alone can be fooled by comments/strings.
+    Completeness check for a self-contained HTML5 canvas game.
+    Checks structural markers a finished file must have, then — if Node is
+    available — runs a real JS syntax check on the extracted <script> content
+    instead of a naive brace count (which false-positives constantly on real
+    JS: comments, strings, and template literals routinely contain unmatched
+    braces even in perfectly valid, complete code).
     """
-    has_loop = "clock.tick" in code or "pygame.quit" in code
-    has_flip = "pygame.display.flip" in code or "pygame.display.update" in code
-    if not (has_loop and has_flip):
+    lower = code.lower()
+
+    has_doctype_ish = "<html" in lower
+    ends_properly = lower.rstrip().endswith("</html>")
+    has_canvas = "<canvas" in lower
+    has_loop = "requestanimationframe" in lower
+    has_script_close = "</script>" in lower
+
+    if not (has_doctype_ish and ends_properly and has_canvas and has_loop and has_script_close):
         return False
-    try:
-        ast.parse(code)
-    except SyntaxError:
-        return False
+
+    match = re.search(r"<script[^>]*>(.*)</script>", code, re.DOTALL | re.IGNORECASE)
+    if match:
+        js_result = _node_syntax_check(match.group(1))
+        if js_result is False:
+            return False
+        # js_result is True, or None (Node unavailable) — either way, don't block on it
+
     return True
 
 
 def continue_code(partial_code: str, enhanced_prompt: str, style_desc: str) -> str:
-    continuation_prompt = f"""You were writing a Pygame game for: "{enhanced_prompt}" (style: {style_desc})
+    continuation_prompt = f"""You were writing a self-contained HTML5 Canvas game for: "{enhanced_prompt}" (style: {style_desc})
 
-The code below is INCOMPLETE — it got cut off mid-way:
+The HTML/JS below is INCOMPLETE — it got cut off mid-way:
 
 {partial_code}
 
-Continue EXACTLY from where it stopped. Output ONLY the remaining Python code.
+Continue EXACTLY from where it stopped. Output ONLY the remaining HTML/JS/CSS.
 Do NOT repeat anything already written. Start from the cut-off point.
-The final lines must be the running game loop with clock.tick(60) and pygame.display.flip().
-Output ONLY Python code. No markdown. No explanations."""
+The final lines must properly close the game loop, </script>, </body>, and </html>.
+Output ONLY code. No markdown. No explanations."""
 
     text = _call_model(continuation_prompt, temperature=0.3, max_output_tokens=8192)
     return clean_code(text)
@@ -211,7 +287,8 @@ Output ONLY Python code. No markdown. No explanations."""
 
 def generate_game(prompt: str, style: str = "arcade") -> tuple[str, str]:
     """
-    Returns (enhanced_prompt, game_code) so the UI can show what was improved.
+    Returns (enhanced_prompt, game_html) so the UI can show what was improved
+    and embed/play the game directly in the browser.
     Raises GameGenerationError on any failure, with a user-safe message.
     """
     style_hints = {
@@ -234,10 +311,10 @@ Visual style: {style_desc}
 Game design brief:
 {enhanced}
 
-IMPORTANT: Write the ENTIRE complete game right now. Do not stop early.
-The very last line of your output must be inside the running game loop.
+IMPORTANT: Write the ENTIRE complete, self-contained HTML file right now. Do not stop early.
+The very last line of your output must be </html>.
 
-Begin the Python code now:"""
+Begin the HTML now:"""
 
     raw_text = _call_model(full_prompt, temperature=0.7, max_output_tokens=16384)
     code = clean_code(raw_text)
