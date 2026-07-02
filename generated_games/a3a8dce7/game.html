@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sparkle's Petal Quest</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #2c3e50; /* Dark background for the page */
+            font-family: 'Arial', sans-serif;
+        }
+        canvas {
+            background-color: #BAE1FF; /* Default sky color */
+            border: 2px solid #34495E;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+            display: block; /* Remove extra space below canvas */
+            touch-action: none; /* Prevent default touch actions like scrolling/zooming */
+        }
+    </style>
+</head>
+<body>
+    <canvas id="game" width="800" height="600"></canvas>
+
+    <script>
+        // Game Constants
+        const CANVAS_WIDTH = 800;
+        const CANVAS_HEIGHT = 600;
+
+        // Color Palette (Pastel/Jewel/Neon inspired)
+        const COLOR_SKY = '#BAE1FF';       // Light Blue
+        const COLOR_CLOUD = '#F0F8FF';     // Alice Blue
+        const COLOR_PLAYER = '#FFB3BA';    // Light Pink
+        const COLOR_PLAYER_GLOW = 'rgba(255, 179, 186, 0.4)'; // Transparent Light Pink
+        const COLOR_PETAL = '#FFDFBA';     // Peach
+        const COLOR_ENEMY_BEE_BODY = '#FFD700'; // Gold
+        const COLOR_ENEMY_BEE_STRIPE = '#4A235A'; // Dark Purple
+        const COLOR_ENEMY_CATERPILLAR = '#BAFFC9'; // Light Green
+        const COLOR_POWERUP_BERRY = '#E8BAFF'; // Lavender
+        const COLOR_TEXT = '#4A235A';      // Dark Purple for contrast
+        const COLOR_TEXT_SHADOW = '#8E44AD'; // Medium Purple
+        const COLOR_UI_BG = 'rgba(0, 0, 0, 0.5)';
+        const COLOR_GAME_OVER_BG = 'rgba(0, 0, 0, 0.7)';
+        const COLOR_HEALTH_BAR_BG = '#34495E'; // Dark Grey Blue
+        const COLOR_HEALTH_BAR_FILL = '#2ECC71'; // Emerald Green
+        const COLOR_EXPLOSION = '#FF6347'; // Tomato Red
+
+        // Game State Variables
+        let canvas, ctx;
+        let gameRunning = false;
+        let lastFrameTime = 0;
+        let gameTime = 0;
+
+        let player = {};
+        let enemies = [];
+        let petals = [];
+        let powerups = [];
+        let particles = [];
+        let scorePopups = [];
+        let clouds = [];
+
+        let score = 0;
+        let playerHealth = 100;
+        const MAX_HEALTH = 100;
+        let playerInvincibleTimer = 0;
+        let playerSpeedBoostTimer = 0;
+
+        let input = {
+            keys: {},
+            mouseX: CANVAS_WIDTH / 2,
+            mouseY: CANVAS_HEIGHT / 2,
+            isMouseDown: false,
+            touchX: CANVAS_WIDTH / 2,
+            touchY: CANVAS_HEIGHT / 2,
+            isTouched: false
+        };
+
+        let enemySpawnTimer = 0;
+        let petalSpawnTimer = 0;
+        let powerupSpawnTimer = 0;
+        let difficultyMultiplier = 1;
+
+        // --- Game Objects & Drawing Functions ---
+
+        // Player (Sparkle the Fairy)
+        function createPlayer() {
+            return {
+                x: CANVAS_WIDTH / 2,
+                y: CANVAS_HEIGHT - 100,
+                radius: 20,
+                speed: 3,
+                dx: 0,
+                dy: 0
+            };
+        }
+
+        function drawPlayer(ctx, player) {
+            ctx.save();
+            ctx.translate(player.x, player.y);
+
+            // Player glow effect (if invincible or speed boosting)
+            if (playerInvincibleTimer > 0 || playerSpeedBoostTimer > 0) {
+                ctx.beginPath();
+                ctx.arc(0, 0, player.radius + 8, 0, Math.PI * 2);
+                ctx.fillStyle = COLOR_PLAYER_GLOW;
+                ctx.fill();
+            }
+
+            // Body (rounded rectangle)
+            ctx.beginPath();
+            ctx.ellipse(0, 5, 15, 25, 0, 0, Math.PI * 2);
+            ctx.fillStyle = COLOR_PLAYER;
+            ctx.fill();
+
+            // Head (circle)
+            ctx.beginPath();
+            ctx.arc(0, -20, 15, 0, Math.PI * 2);
+            ctx.fillStyle = COLOR_PLAYER;
+            ctx.fill();
+            ctx.strokeStyle = COLOR_TEXT_SHADOW;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // Wings (triangles/bezier)
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.strokeStyle = COLOR_TEXT_SHADOW;
+            ctx.lineWidth = 1;
+
+            // Left wing
+            ctx.beginPath();
+            ctx.moveTo(-15, -10);
+            ctx.bezierCurveTo(-35, -30, -35, 10, -15, 15);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Right wing
+            ctx.beginPath();
+            ctx.moveTo(15, -10);
+            ctx.bezierCurveTo(35, -30, 35, 10, 15, 15);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Eyes (dots)
+            ctx.beginPath();
+            ctx.arc(-5, -23, 2, 0, Math.PI * 2);
+            ctx.arc(5, -23, 2, 0, Math.PI * 2);
+            ctx.fillStyle = COLOR_ENEMY_BEE_STRIPE;
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        // Enemy: Grumpy Bee
+        function createBee() {
+            return {
+                x: Math.random() * (CANVAS_WIDTH - 60) + 30,
+                y: -50,
+                radius: 25,
+                speed: 1.5 * difficultyMultiplier,
+                dx: (Math.random() < 0.5 ? 1 : -1) * (1 + Math.random()),
+                dy: 1,
+                health: 1,
+                type: 'bee'
+            };
+        }
+
+        function drawBee(ctx, enemy) {
+            ctx.save();
+            ctx.translate(enemy.x, enemy.y);
+
+            // Body (ellipse with stripes)
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 20, 25, Math.PI / 2, 0, Math.PI * 2);
+            ctx.fillStyle = COLOR_ENEMY_BEE_BODY;
+            ctx.fill();
+            ctx.strokeStyle = COLOR_ENEMY_BEE_STRIPE;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Stripes
+            ctx.beginPath();
+            ctx.ellipse(0, -10, 20, 25, Math.PI / 2, Math.PI * 0.2, Math.PI * 0.8);
+            ctx.ellipse(0, 10, 20, 25, Math.PI / 2, Math.PI * 1.2, Math.PI * 1.8);
+            ctx.fillStyle = COLOR_ENEMY_BEE_STRIPE;
+            ctx.fill();
+            ctx.stroke();
+
+            // Head (circle)
+            ctx.beginPath();
+            ctx.arc(25, 0, 15, 0, Math.PI * 2);
+            ctx.fillStyle = COLOR_ENEMY_BEE_BODY;
+            ctx.fill();
+            ctx.stroke();
+
+            // Eyes
+            ctx.beginPath();
+            ctx.arc(30, -5, 3, 0, Math.PI * 2);
+            ctx.arc(30, 5, 3, 0, Math.PI * 2);
+            ctx.fillStyle = COLOR_ENEMY_BEE_STRIPE;
+            ctx.fill();
+
+            // Stinger (triangle)
+            ctx.beginPath();
+            ctx.moveTo(-25, 0);
+            ctx.lineTo(-35, -5);
+            ctx.lineTo(-35, 5);
+            ctx.closePath();
+            ctx.fillStyle = COLOR_ENEMY_BEE_STRIPE;
+            ctx.fill();
+            ctx.stroke();
+
+            // Wings (transparent ovals)
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.strokeStyle = COLOR_TEXT_SHADOW;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.ellipse(10, -25, 10, 15, -Math.PI / 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.ellipse(10, 25, 10, 15, Math.PI / 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        // Enemy: Spiky Caterpillar
+        function createCaterpillar() {
+            return {
+                x: Math.random() * (CANVAS_WIDTH - 60) + 30,
+                y: -50,
+                radius: 30, // Effective collision radius
+                segmentRadius: 15,
+                speed: 0.8 * difficultyMultiplier,
+                dy: 1,
+                health: 2,
+                type: 'caterpillar'
+            };
+        }
+
+        function drawCaterpillar(ctx, enemy) {
+            ctx.save();
+            ctx.translate(enemy.x, enemy.y);
+
+            const numSegments = 5;
+            const segmentOffset = enemy.segmentRadius * 1.5;
+
+            ctx.fillStyle = COLOR_ENEMY_CATERPILLAR;
+            ctx.strokeStyle = COLOR_TEXT_SHADOW;
+            ctx.lineWidth = 2;
+
+            for (let i = 0; i < numSegments; i++) {
+                ctx.beginPath();
+                ctx.arc(i * segmentOffset - (numSegments - 1) * segmentOffset / 2, 0, enemy.segmentRadius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // Small spikes
+                ctx.beginPath();
+                ctx.moveTo(i * segmentOffset - (numSegments - 1) * segmentOffset / 2, -enemy.segmentRadius);
+                ctx.lineTo(i * segmentOffset - (numSegments - 1) * segmentOffset / 2, -enemy.segmentRadius - 8);
+                ctx.moveTo(i * segmentOffset - (numSegments - 1) * segmentOffset / 2, enemy.segmentRadius);
+                ctx.lineTo(i * segmentOffset - (numSegments - 1) * segmentOffset / 2, enemy.segmentRadius + 8);
+                ctx.stroke();
+            }
+
+            // Head (last segment)
+            ctx.beginPath();
+            ctx.arc((numSegments - 1) * segmentOffset - (numSegments - 1) * segmentOffset / 2 + enemy.segmentRadius / 2, 0, enemy.segmentRadius * 1.2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Eyes on head
+            ctx.beginPath();
+            ctx.arc((numSegments - 1) * segmentOffset - (numSegments - 1) * segmentOffset / 2 + enemy.segmentRadius / 2 + 5, -5, 3, 0, Math.PI * 2);
+            ctx.arc((numSegments - 1) * segmentOffset - (numSegments - 1) * segmentOffset / 2 + enemy.segmentRadius / 2 + 5, 5, 3, 0, Math.PI * 2);
+            ctx.fillStyle = COLOR_ENEMY_BEE_STRIPE;
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        // Collectible: Petal
+        function createPetal() {
+            return {
+                x: Math.random() * (CANVAS_WIDTH - 40) + 20,
+                y: -30,
+                radius: 15,
+                speed: 0.5 * difficultyMultiplier
+            };
+        }
+
+        function drawPetal(ctx, petal) {
+            ctx.save();
+            ctx.translate(petal.x, petal.y);
+            ctx.fillStyle = COLOR_PETAL;
+            ctx.strokeStyle = COLOR_TEXT_SHADOW;
+            ctx.lineWidth = 1;
+
+            // Heart shape
+            ctx.beginPath();
+            ctx.moveTo(0, petal.radius);
+            ctx.bezierCurveTo(petal.radius, petal.radius, petal.radius * 2, petal.radius / 2, 0, -petal.radius);
+            ctx.bezierCurveTo(-petal.radius * 2, petal.radius / 2, -petal.radius, petal.radius, 0, petal.radius);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        // Power-up: Shiny Berry
+        function createPowerup() {
+            return {
+                x: Math.random() * (CANVAS_WIDTH - 40) + 20,
+                y: -30,
+                radius: 18,
+                speed: 0.7 * difficultyMultiplier,
+                type: 'health' // Could be 'speed', 'shield' etc.
+            };
+        }
+
+        function drawPowerup(ctx, powerup) {
+            ctx.save();
+            ctx.translate(powerup.x, powerup.y);
+
+            // Berry glow
+            ctx.beginPath();
+            ctx.arc(0, 0, powerup.radius + 5, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(232, 186, 255, 0.4)'; // Transparent lavender
+            ctx.fill();
+
+            // Main berry body
+            ctx.beginPath();
+            ctx.arc(0, 0, powerup.radius, 0, Math.PI * 2);
+            ctx.fillStyle = COLOR_POWERUP_BERRY;
+            ctx.fill();
+            ctx.strokeStyle = COLOR_TEXT_SHADOW;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Highlight
+            ctx.beginPath();
+            ctx.arc(powerup.radius * 0.3, -powerup.radius * 0.3, powerup.radius * 0.4, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.fill();
+
+            // Small leaf
+            ctx.beginPath();
+            ctx.moveTo(-powerup.radius * 0.5, -powerup.radius * 0.8);
+            ctx.bezierCurveTo(-powerup.radius * 0.8, -powerup.radius * 1.2, powerup.radius * 0.2, -powerup.radius * 1.2, powerup.radius * 0.2, -powerup.radius * 0.8);
+            ctx.fillStyle = COLOR_ENEMY_CATERPILLAR;
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        // Background: Clouds
+        function createCloud(x, y, size) {
+            return {
+                x: x,
+                y: y,
+                size: size,
+                speed: Math.random() * 0.2 + 0.1
+            };
+        }
+
+        function drawCloud(ctx, cloud) {
+            ctx.save();
+            ctx.translate(cloud.x, cloud.y);
+            ctx.fillStyle = COLOR_CLOUD;
+            ctx.globalAlpha = 0.8;
+
+            ctx.beginPath();
+            ctx.arc(-cloud.size * 0.6, 0, cloud.size * 0.7, 0, Math.PI * 2);
+            ctx.arc(cloud.size * 0.6, 0, cloud.size * 0.7, 0, Math.PI * 2);
+            ctx.arc(0, -cloud.size * 0.4, cloud.size * 0.8, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.globalAlpha = 1;
+            ctx.restore();
+        }
+
+        // Particle for explosions
+        function createParticle(x, y, color) {
+            return {
+                x: x,
+                y: y,
+                vx: (Math.random() - 0.5) * 5,
+                vy: (Math.random() - 0.5) * 5,
+                radius: Math.random() * 5 + 2,
+                color: color,
+                alpha: 1,
+                lifetime: 0.5 // seconds
+            };
+        }
+
+        function drawParticle(ctx, particle) {
+            ctx.save();
+            ctx.globalAlpha = particle.alpha;
+            ctx.fillStyle = particle.color;
+            ctx.beginPath();
+            ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        // Score Popup
+        function createScorePopup(x, y, value, color = COLOR_TEXT) {
+            return {
+                x: x,
+                y: y,
+                value: `+${value}`,
+                color: color,
+                alpha: 1,
+                vy: -0.5, // Rises up
+                lifetime: 1 // seconds
+            };
+        }
+
+        function drawScorePopup(ctx, popup) {
+            ctx.save();
+            ctx.globalAlpha = popup.alpha;
+            ctx.font = 'bold 24px Arial';
+            ctx.textAlign = 'center';
+
+            // Shadow
+            ctx.fillStyle = COLOR_TEXT_SHADOW;
+            ctx.fillText(popup.value, popup.x + 2, popup.y + 2);
+
+            // Text
+            ctx.fillStyle = popup.color;
+            ctx.fillText(popup.value, popup.x, popup.y);
+            ctx.restore();
+        }
+
+        // --- Core Game Logic ---
+
+        function initGame() {
+            canvas = document.getElementById('game');
+            ctx = canvas.getContext('2d');
+
+            setupInputListeners();
+            resetGame();
+
+            // Initial clouds
+            for (let i = 0; i < 10; i++) {
+                clouds.push(createCloud(Math.random() * CANVAS_WIDTH, Math.random() * CANVAS_HEIGHT, Math.random() * 40 + 30));
+            }
+
+            lastFrameTime = performance.now();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function resetGame() {
+            player = createPlayer();
+            enemies = [];
+            petals = [];
+            powerups = [];
+            particles = [];
+            scorePopups = [];
+
+            score = 0;
+            playerHealth = MAX_HEALTH;
+            playerInvincibleTimer = 0;
+            playerSpeedBoostTimer = 0;
+            gameTime = 0;
+
+            enemySpawnTimer = 0;
+            petalSpawnTimer = 0;
+            powerupSpawnTimer = 0;
+            difficultyMultiplier = 1;
+
+            gameRunning = true;
+        }
+
+        function update(deltaTime) {
+            gameTime += deltaTime;
+
+            // Update difficulty
+            difficultyMultiplier = 1 + Math.floor(gameTime / 15000) * 0.2; // Every 15 seconds, difficulty increases
+
+            // Player movement
+            let targetX = player.x;
+            let targetY = player.y;
+            let isMovingWithInput = false;
+
+            if (input.isMouseDown || input.isTouched) {
+                targetX = input.isMouseDown ? input.mouseX : input.touchX;
+                targetY = input.isMouseDown ? input.mouseY : input.touchY;
+                isMovingWithInput = true;
+            } else {
+                if (input.keys['ArrowLeft'] || input.keys['a']) { targetX -= player.speed * 10; isMovingWithInput = true; }
+                if (input.keys['ArrowRight'] || input.keys['d']) { targetX += player.speed * 10; isMovingWithInput = true; }
+                if (input.keys['ArrowUp'] || input.keys['w']) { targetY -= player.speed * 10; isMovingWithInput = true; }
+                if (input.keys['ArrowDown'] || input.keys['s']) { targetY += player.speed * 10; isMovingWithInput = true; }
+            }
+
+            if (isMovingWithInput) {
+                const currentSpeed = player.speed * (playerSpeedBoostTimer > 0 ? 2 : 1);
+                const dx = targetX - player.x;
+                const dy = targetY - player.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (distance > currentSpeed) { // Move towards target
+                    player.x += (dx / distance) * currentSpeed;
+                    player.y += (dy / distance) * currentSpeed;
+                } else { // Close enough, snap to target
+                    player.x = targetX;
+                    player.y = targetY;
+                }
+            }
+
+            // Player speed boost (SPACE key)
+            if (input.keys[' '] && playerSpeedBoostTimer <= 0) {
+                playerSpeedBoostTimer = 3000; // 3 seconds boost
+                input.keys[' '] = false; // Consume key press
+            }
+
+            // Clamp player position
+            player.x = Math.max(player.radius, Math.min(CANVAS_WIDTH - player.radius, player.x));
+            player.y = Math.max(player.radius, Math.min(CANVAS_HEIGHT - player.radius, player.y));
+
+            // Update timers
+            if (playerInvincibleTimer > 0) playerInvincibleTimer -= deltaTime;
+            if (playerSpeedBoostTimer > 0) playerSpeedBoostTimer -= deltaTime;
+
+            // Spawn enemies
+            enemySpawnTimer += deltaTime;
+            const minEnemySpawnTime = 2000 / difficultyMultiplier;
+            if (enemySpawnTimer > minEnemySpawnTime) {
+                if (Math.random() < 0.6) { // 60% chance for Bee
+                    enemies.push(createBee());
+                } else { // 40% chance for Caterpillar
+                    enemies.push(createCaterpillar());
+                }
+                enemySpawnTimer = 0;
+            }
+
+            // Spawn petals
+            petalSpawnTimer += deltaTime;
+            const minPetalSpawnTime = 1000 / difficultyMultiplier;
+            if (petalSpawnTimer > minPetalSpawnTime) {
+                petals.push(createPetal());
+                petalSpawnTimer = 0;
+            }
+
+            // Spawn powerups
+            powerupSpawnTimer += deltaTime;
+            const minPowerupSpawnTime = 15000 / difficultyMultiplier; // Every 15 seconds
+            if (powerupSpawnTimer > minPowerupSpawnTime) {
+                powerups.push(createPowerup());
+                powerupSpawnTimer = 0;
+            }
+
+            // Update enemies
+            enemies.forEach(enemy => {
+                if (enemy.type === 'bee') {
+                    enemy.x += enemy.dx * enemy.speed;
+                    enemy.y += enemy.dy * enemy.speed;
+
+                    // Bounce off walls
+                    if (enemy.x - enemy.radius < 0 || enemy.x + enemy.radius > CANVAS_WIDTH) {
+                        enemy.dx *= -1;
+                        enemy.x = Math.max(enemy.radius, Math.min(CANVAS_WIDTH - enemy.radius, enemy.x));
+                    }
+                } else if (enemy.type === 'caterpillar') {
+                    enemy.y += enemy.dy * enemy.speed;
+                    // Simple vertical bounce
+                    if (enemy.y - enemy.radius < 0 || enemy.y + enemy.radius > CANVAS_HEIGHT) {
+                        enemy.dy *= -1;
+                        enemy.y = Math.max(enemy.radius, Math.min(CANVAS_HEIGHT - enemy.radius, enemy.y));
+                    }
+                }
+
+                // Check collision with player
+                if (checkCollision(player, enemy)) {
+                    if (playerInvincibleTimer <= 0) {
+                        playerHealth -= 20; // Player takes damage
+                        playerInvincibleTimer = 1500; // 1.5 seconds invincibility
+                        // Screen flash effect
+                        ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
+                        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                    }
+                    // Remove enemy on collision (if it's a 'hit' rather than just 'touch')
+                    // For this game, let's say enemies just damage and pass through, or get removed if player has a shield.
+                    // For now, enemies stay, player gets invincibility.
+                }
+            });
+            // Remove enemies that go off screen
+            enemies = enemies.filter(enemy => enemy.y < CANVAS_HEIGHT + enemy.radius * 2);
+
+            // Update petals
+            petals.forEach(petal => {
+                petal.y += petal.speed;
+                // Check collision with player
+                if (checkCollision(player, petal)) {
+                    score += 10;
+                    scorePopups.push(createScorePopup(petal.x, petal.y, 10, COLOR_PETAL));
+                    petal.collected = true;
+                }
+            });
+            petals = petals.filter(petal => !petal.collected && petal.y < CANVAS_HEIGHT + petal.radius * 2);
+
+            // Update powerups
+            powerups.forEach(powerup => {
+                powerup.y += powerup.speed;
+                // Check collision with player
+                if (checkCollision(player, powerup)) {
+                    if (powerup.type === 'health') {
+                        playerHealth = Math.min(MAX_HEALTH, playerHealth + 25);
+                        scorePopups.push(createScorePopup(powerup.x, powerup.y, 'Health!', COLOR_HEALTH_BAR_FILL));
+                    }
+                    powerup.collected = true;
+                }
+            });
+            powerups = powerups.filter(powerup => !powerup.collected && powerup.y < CANVAS_HEIGHT + powerup.radius * 2);
+
+            // Update particles
+            particles.forEach(p => {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.alpha -= deltaTime / (p.lifetime * 1000);
+            });
+            particles = particles.filter(p => p.alpha > 0);
+
+            // Update score popups
+            scorePopups.forEach(p => {
+                p.y += p.vy;
+                p.alpha -= deltaTime / (p.lifetime * 1000);
+            });
+            scorePopups = scorePopups.filter(p => p.alpha > 0);
+
+            // Update clouds (parallax background)
+            clouds.forEach(cloud => {
+                cloud.y += cloud.speed;
+                if (cloud.y - cloud.size > CANVAS_HEIGHT) {
+                    cloud.y = -cloud.size; // Loop back to top
+                    cloud.x = Math.random() * CANVAS_WIDTH;
+                }
+            });
+
+            // Game over condition
+            if (playerHealth <= 0) {
+                gameRunning = false;
+            }
+        }
+
+        function draw() {
+            // Clear canvas
+            ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            ctx.fillStyle = COLOR_SKY;
+            ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+            // Draw clouds (background layer)
+            clouds.forEach(cloud => drawCloud(ctx, cloud));
+
+            // Draw petals
+            petals.forEach(petal => drawPetal(ctx, petal));
+
+            // Draw powerups
+            powerups.forEach(powerup => drawPowerup(ctx, powerup));
+
+            // Draw enemies
+            enemies.forEach(enemy => {
+                if (enemy.type === 'bee') {
+                    drawBee(ctx, enemy);
+                } else if (enemy.type === 'caterpillar') {
+                    drawCaterpillar(ctx, enemy);
+                }
+            });
+
+            // Draw player
+            drawPlayer(ctx, player);
+
+            // Draw particles
+            particles.forEach(p => drawParticle(ctx, p));
+
+            // Draw score popups
+            scorePopups.forEach(p => drawScorePopup(ctx, p));
+
+            // Draw UI: Score
+            ctx.font = 'bold 30px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillStyle = COLOR_TEXT_SHADOW;
+            ctx.fillText('Score: ' + score, 22, 42);
+            ctx.fillStyle = COLOR_TEXT;
+            ctx.fillText('Score: ' + score, 20, 40);
+
+            // Draw UI: Health Bar
+            const healthBarWidth = 150;
+            const healthBarHeight = 20;
+            const healthBarX = CANVAS_WIDTH - healthBarWidth - 20;
+            const healthBarY = 20;
+
+            // Health bar background (rounded)
+            ctx.fillStyle = COLOR_HEALTH_BAR_BG;
+            drawRoundedRect(ctx, healthBarX, healthBarY, healthBarWidth, healthBarHeight, 10);
+            ctx.fill();
+
+            // Health bar fill (rounded)
+            const currentHealthWidth = (playerHealth / MAX_HEALTH) * healthBarWidth;
+            ctx.fillStyle = COLOR_HEALTH_BAR_FILL;
+            drawRoundedRect(ctx, healthBarX, healthBarY, currentHealthWidth, healthBarHeight, 10);
+            ctx.fill();
+
+            // Health bar border (white)
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 2;
+            drawRoundedRect(ctx, healthBarX, healthBarY, healthBarWidth, healthBarHeight, 10);
+            ctx.stroke();
+
+            // Game Over screen
+            if (!gameRunning) {
+                ctx.fillStyle = COLOR_GAME_OVER_BG;
+                ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+                ctx.font = 'bold 60px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillStyle = COLOR_TEXT_SHADOW;
+                ctx.fillText('GAME OVER', CANVAS_WIDTH / 2 + 3, CANVAS_HEIGHT / 2 - 47);
+                ctx.fillStyle = COLOR_TEXT;
+                ctx.fillText('GAME OVER', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 50);
+
+                ctx.font = 'bold 30px Arial';
+                ctx.fillStyle = COLOR_TEXT_SHADOW;
+                ctx.fillText('Final Score: ' + score, CANVAS_WIDTH / 2 + 2, CANVAS_HEIGHT / 2 + 33);
+                ctx.fillStyle = COLOR_PETAL;
+                ctx.fillText('Final Score: ' + score, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 30);
+
+                ctx.font = '24px Arial';
+                ctx.fillStyle = COLOR_TEXT_SHADOW;
+                ctx.fillText('Press R or tap to restart', CANVAS_WIDTH / 2 + 2, CANVAS_HEIGHT / 2 + 83);
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillText('Press R or tap to restart', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 80);
+            }
+        }
+
+        // Helper for rounded rectangles
+        function drawRoundedRect(ctx, x, y, width, height, radius) {
+            ctx.beginPath();
+            ctx.moveTo(x + radius, y);
+            ctx.lineTo(x + width - radius, y);
+            ctx.arcTo(x + width, y, x + width, y + radius, radius);
+            ctx.lineTo(x + width, y + height - radius);
+            ctx.arcTo(x + width, y + height, x + width - radius, y + height, radius);
+            ctx.lineTo(x + radius, y + height);
+            ctx.arcTo(x, y + height, x, y + height - radius, radius);
+            ctx.lineTo(x, y + radius);
+            ctx.arcTo(x, y, x + radius, y, radius);
+            ctx.closePath();
+        }
+
+        // Collision detection (circle-circle for simplicity)
+        function checkCollision(obj1, obj2) {
+            const dx = obj1.x - obj2.x;
+            const dy = obj1.y - obj2.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            return distance < obj1.radius + obj2.radius;
+        }
+
+        function gameLoop(currentTime) {
+            const deltaTime = currentTime - lastFrameTime;
+            lastFrameTime = currentTime;
+
+            if (gameRunning) {
+                update(deltaTime);
+            }
+            draw();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- Input Handling ---
+        function setupInputListeners() {
+            document.addEventListener('keydown', (e) => {
+                input.keys[e.key] = true;
+                if (!gameRunning && e.key === 'r') {
+                    resetGame();
+                }
+            });
+            document.addEventListener('keyup', (e) => {
+                input.keys[e.key] = false;
+            });
+
+            canvas.addEventListener('mousemove', (e) => {
+                const rect = canvas.getBoundingClientRect();
+                input.mouseX = e.clientX - rect.left;
+                input.mouseY = e.clientY - rect.top;
+            });
+
+            canvas.addEventListener('mousedown', (e) => {
+                input.isMouseDown = true;
+                if (!gameRunning) {
+                    resetGame();
+                }
+            });
+            canvas.addEventListener('mouseup', () => {
+                input.isMouseDown = false;
+            });
+
+            canvas.addEventListener('touchstart', (e) => {
+                e.preventDefault(); // Prevent scrolling/zooming
+                input.isTouched = true;
+                const touch = e.touches[0];
+                const rect = canvas.getBoundingClientRect();
+                input.touchX = touch.clientX - rect.left;
+                input.touchY = touch.clientY - rect.top;
+
+                if (!gameRunning) {
+                    resetGame();
+                } else if (playerSpeedBoostTimer <= 0) {
+                    playerSpeedBoostTimer = 3000; // 3 seconds boost
+                }
+            }, { passive: false });
+
+            canvas.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                const touch = e.touches[0];
+                const rect = canvas.getBoundingClientRect();
+                input.touchX = touch.clientX - rect.left;
+                input.touchY = touch.clientY - rect.top;
+            }, { passive: false });
+
+            canvas.addEventListener('touchend', () => {
+                input.isTouched = false;
+            });
+        }
+
+        // Run the game when the DOM is fully loaded
+        document.addEventListener('DOMContentLoaded', initGame);
+    </script>
+</body>
+</html>

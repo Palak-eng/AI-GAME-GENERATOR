@@ -144,9 +144,16 @@ if st.button("⚡ Generate My Game!", use_container_width=True):
     if not prompt:
         st.warning("Type a game idea first — even just 2 words like 'ninja jump' works!")
     else:
-        with st.spinner("🧠 AI is designing, coding, and polishing your game... this can take up to a minute"):
+        with st.status("🧠 Starting up...", expanded=True) as pipeline:
+            progress_bar = st.progress(0)
+
+            def on_progress(pct: int, msg: str):
+                progress_bar.progress(min(pct, 100))
+                pipeline.update(label=msg)
+                st.write(msg)
+
             try:
-                enhanced, code = generate_game(prompt, style=style)
+                enhanced, code = generate_game(prompt, style=style, on_progress=on_progress)
 
                 # Save file in a per-session folder so concurrent users don't collide
                 out_dir = os.path.join("generated_games", st.session_state.session_id)
@@ -161,12 +168,15 @@ if st.button("⚡ Generate My Game!", use_container_width=True):
                     "code": code,
                     "path": out_path,
                 }
+                pipeline.update(label="🎉 Game ready!", state="complete", expanded=False)
 
             except GameGenerationError as e:
                 st.session_state.result = None
+                pipeline.update(label="😕 Generation failed", state="error", expanded=False)
                 st.error(f"😕 {e}")
             except Exception:
                 st.session_state.result = None
+                pipeline.update(label="😕 Generation failed", state="error", expanded=False)
                 st.error(
                     "😕 Something unexpected went wrong while generating your game. "
                     "Please try again in a moment."

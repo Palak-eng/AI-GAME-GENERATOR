@@ -79,6 +79,15 @@ def _call_model(contents: str, temperature: float, max_output_tokens: int):
             config={"temperature": temperature, "max_output_tokens": max_output_tokens},
         )
     except Exception as e:
+        err_str = str(e)
+        if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
+            raise GameGenerationError(
+                "🚦 The Gemini API's free-tier quota is used up for now (free keys are capped "
+                "at a small number of requests per day/minute, and each game generation uses "
+                "several requests). Wait a bit and try again, or switch to a Gemini API key with "
+                "billing enabled for higher limits — see "
+                "https://ai.google.dev/gemini-api/docs/rate-limits"
+            ) from e
         raise GameGenerationError(f"Couldn't reach the AI service: {e}") from e
     return _extract_text(response)
 
@@ -99,6 +108,20 @@ def enhance_prompt(user_prompt: str) -> str:
 #   2) can be downloaded as one file and re-opened / replayed anytime
 #   3) can be shared with a friend (WhatsApp/email/Drive) — they just
 #      double-click it and it opens in their browser, no installs needed.
+#
+# NOTE: prompt-enhancement and code generation are combined into ONE API call
+# (see generate_game below) instead of two separate calls. Free-tier Gemini
+# keys have tight daily/per-minute quotas, and every request counts — this
+# cuts the baseline requests-per-generation roughly in half.
+
+GAME_DESIGN_RULES = """You are also a game design expert helping kids create amazing games.
+Before writing code, mentally expand the kid's simple idea into a RICH, DETAILED game design:
+- Keep the core idea the same
+- Add: specific visual details, character descriptions, enemy types, power-ups, background details, color themes, sound mood
+- Add: clear win/lose condition, scoring system, difficulty progression
+- Make it exciting and fun-sounding
+- Keep all content suitable for children (no graphic violence or gore, even for "survival" or "zombie" themes — keep it cartoonish and silly)
+"""
 
 SYSTEM_PROMPT = """You are a senior HTML5 game developer who makes VISUALLY STUNNING browser games
 using the Canvas 2D API and vanilla JavaScript. These games are for kids — they must look
@@ -285,12 +308,57 @@ Output ONLY code. No markdown. No explanations."""
     return clean_code(text)
 
 
-def generate_game(prompt: str, style: str = "arcade") -> tuple[str, str]:
+def _parse_combined_response(raw_text: str, fallback_prompt: str) -> tuple[str, str]:
+    """
+    Parses a single model response that should contain both the enhanced
+    design brief and the full game code, separated by marker lines.
+    Falls back gracefully if the model didn't follow the marker format
+    exactly (e.g. found the HTML start directly, or worst case treats the
+    whole response as code).
+    """
+    text = raw_text.strip()
+
+    match = re.search(
+        r"===\s*ENHANCED PROMPT\s*===(.*?)===\s*GAME CODE\s*===(.*)",
+        text,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if match:
+        enhanced = match.group(1).strip()
+        code = clean_code(match.group(2))
+        if enhanced and code:
+            return enhanced, code
+
+    # Fallback: markers missing/malformed — locate where the HTML actually starts
+    html_start = re.search(r"<!DOCTYPE html", text, re.IGNORECASE)
+    if html_start:
+        enhanced = text[: html_start.start()].strip()
+        enhanced = re.sub(r"===.*?===", "", enhanced, flags=re.DOTALL).strip()
+        code = clean_code(text[html_start.start():])
+        return (enhanced or f"A fun {fallback_prompt} game, brought to life!"), code
+
+    # Last resort: treat everything as code
+    return f"A fun {fallback_prompt} game, brought to life!", clean_code(text)
+
+
+def generate_game(prompt: str, style: str = "arcade", on_progress=None) -> tuple[str, str]:
     """
     Returns (enhanced_prompt, game_html) so the UI can show what was improved
     and embed/play the game directly in the browser.
     Raises GameGenerationError on any failure, with a user-safe message.
+
+    on_progress, if given, is called as on_progress(percent: int, message: str)
+    at each stage of the pipeline so the caller (e.g. a Streamlit UI) can
+    render live progress instead of a plain spinner.
+
+    Prompt-enhancement and code generation happen in a SINGLE API call (not
+    two) to conserve quota on free-tier Gemini keys — see the note above
+    SYSTEM_PROMPT.
     """
+    def report(pct: int, msg: str):
+        if on_progress:
+            on_progress(pct, msg)
+
     style_hints = {
         "arcade": "Classic arcade — vibrant neon colors, dark background, fast action.",
         "retro": "16-bit retro — punchy limited palette, pixel-art inspired shapes.",
@@ -300,35 +368,45 @@ def generate_game(prompt: str, style: str = "arcade") -> tuple[str, str]:
     }
     style_desc = style_hints.get(style, style_hints["arcade"])
 
-    # Step 1: Enhance the kid's prompt
-    enhanced = enhance_prompt(prompt)
+    report(5, "🧠 Reading your idea...")
 
-    # Step 2: Build full generation prompt
-    full_prompt = f"""{SYSTEM_PROMPT}
+    full_prompt = f"""{GAME_DESIGN_RULES}
+
+{SYSTEM_PROMPT}
 
 Visual style: {style_desc}
+Kid's idea: {prompt}
 
-Game design brief:
-{enhanced}
+Do BOTH of these in this single response, outputting EXACTLY in this format and nothing else
+(no extra commentary before, between, or after):
 
-IMPORTANT: Write the ENTIRE complete, self-contained HTML file right now. Do not stop early.
-The very last line of your output must be </html>.
+===ENHANCED PROMPT===
+(the improved, rich game design brief — 3-6 exciting sentences, plain text only)
+===GAME CODE===
+(the COMPLETE self-contained HTML file — must start with <!DOCTYPE html> and end with </html>)
 
-Begin the HTML now:"""
+Begin now:"""
 
-    raw_text = _call_model(full_prompt, temperature=0.7, max_output_tokens=16384)
-    code = clean_code(raw_text)
+    report(25, "🎨 Designing & writing your full game in one go... (the big step, can take 20-40s)")
+    raw_text = _call_model(full_prompt, temperature=0.75, max_output_tokens=16384)
+    enhanced, code = _parse_combined_response(raw_text, prompt)
 
-    # Step 3: Auto-continue if cut off (bounded retries)
+    report(65, "🔍 Checking the code is complete and valid...")
+
+    # Auto-continue if cut off (bounded retries)
     attempts = 0
     while not is_code_complete(code) and attempts < MAX_CONTINUATIONS:
-        code = code + "\n" + continue_code(code, enhanced, style_desc)
         attempts += 1
+        report(65 + attempts * 10, f"🔧 Code got cut off — adding the missing part (pass {attempts}/{MAX_CONTINUATIONS})...")
+        code = code + "\n" + continue_code(code, enhanced, style_desc)
+        report(65 + attempts * 10 + 5, "🔍 Re-checking completeness...")
 
     if not is_code_complete(code):
+        report(100, "😕 Still incomplete after retries")
         raise GameGenerationError(
             "The AI generated incomplete or invalid code after several attempts. "
             "Please try again — sometimes a shorter or simpler idea works better."
         )
 
+    report(100, "🎉 Game ready to play!")
     return enhanced, code
