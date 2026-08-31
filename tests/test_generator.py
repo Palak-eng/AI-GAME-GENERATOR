@@ -26,14 +26,15 @@ class TestCleanCode:
 
 class TestHasRiskyCanvasApi:
     def test_unguarded_roundrect_detected(self):
-        assert has_risky_canvas_api(
-            "<script>ctx.roundRect(10, 20, 30, 40, 5);</script>"
-        ) is True
+        assert has_risky_canvas_api("<script>ctx.roundRect(10, 20, 30, 40, 5);</script>") is True
 
     def test_guarded_roundrect_ok(self):
-        assert has_risky_canvas_api(
-            "<script>if (ctx.roundRect) { ctx.roundRect(10, 20, 30, 40, 5); }</script>"
-        ) is False
+        assert (
+            has_risky_canvas_api(
+                "<script>if (ctx.roundRect) { ctx.roundRect(10, 20, 30, 40, 5); }</script>"
+            )
+            is False
+        )
 
     def test_safe_apis_ok(self):
         assert has_risky_canvas_api("<script>ctx.fillRect(1, 2, 3, 4);</script>") is False
