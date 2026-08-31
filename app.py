@@ -5,7 +5,6 @@ import streamlit.components.v1 as components
 
 import apiclient
 from gen_features import get_api_base_message
-from generator import GameGenerationError, generate_game
 
 st.set_page_config(
     page_title=" AI Game Maker",
@@ -348,23 +347,20 @@ with tab_make:
             st.warning("Type a game idea first — even just 2 words like 'ninja jump' works!")
         else:
             st.session_state.play_game_code = None
-            with st.status("🧠 Starting up...", expanded=True) as pipeline:
-                progress_bar = st.progress(0)
-
-                def on_progress(pct: int, msg: str):
-                    progress_bar.progress(min(pct, 100))
-                    pipeline.update(label=msg)
-                    st.write(msg)
-
+            if _online:
+                pipeline = st.status(
+                    "🧠 Starting your game idea... (this runs on the server, takes 20–40s)",
+                    expanded=True,
+                )
                 try:
-                    enhanced, code = generate_game(prompt, style=style, on_progress=on_progress)
+                    result = apiclient.generate(prompt, style=style, timeout=150)
                     st.session_state.result = {
-                        "enhanced": enhanced,
-                        "code": code,
+                        "enhanced": result.get("enhanced", prompt),
+                        "code": result["code"],
                         "idea": prompt,
                     }
                     pipeline.update(label="🎉 Game ready!", state="complete", expanded=False)
-                except GameGenerationError as e:
+                except apiclient.ApiError as e:
                     st.session_state.result = None
                     pipeline.update(label="😕 Generation failed", state="error", expanded=False)
                     st.error(f"😕 {e}")
@@ -375,6 +371,11 @@ with tab_make:
                         "😕 Something unexpected went wrong while generating your game. "
                         "Please try again in a moment."
                     )
+            else:
+                st.warning(
+                    "⚠️ The AI service isn't reachable right now, so I can't generate new games. "
+                    "Please check the connection and try again."
+                )
 
     # Render freshly generated game
     if st.session_state.result:

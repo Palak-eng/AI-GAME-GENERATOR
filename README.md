@@ -14,7 +14,7 @@ fun, engineered like a real product.
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
 ![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-D71F00?logo=sqlalchemy&logoColor=white)
 ![Gemini](https://img.shields.io/badge/Gemini-8E75B2?logo=googlegemini&logoColor=white)
-[![CI](https://github.com/YOUR_USER/YOUR_REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_USER/YOUR_REPO/actions/workflows/ci.yml)
+[![CI](https://github.com/Palak-eng/AI-GAME-GENERATOR/actions/workflows/ci.yml/badge.svg)](https://github.com/Palak-eng/AI-GAME-GENERATOR/actions/workflows/ci.yml)
 
 </div>
 
@@ -36,15 +36,21 @@ fun, engineered like a real product.
 A clean **frontend / backend split**, built to be extended and deployed:
 
 ```
-┌────────────────────────────┐        ┌─────────────────────────────┐
-│  Streamlit frontend        │  HTTP  │  FastAPI REST backend (api) │
-│  (app.py)                  │ ─────► │  · User auth (bcrypt)       │
-│  · Make / play games       │  JSON  │  · Session tokens           │
-│  · Login / signup          │ ◄───── │  · Game CRUD + gallery      │
-│  · Browse community gallery│        │  · SQLAlchemy → SQLite/Postgres │
-└────────────────────────────┘        └─────────────────────────────┘
-       UI layer                          API + database layer
+┌────────────────────────────┐   HTTP   ┌─────────────────────────────────────┐
+│  Streamlit frontend        │ ───────► │  FastAPI REST backend (api)         │
+│  (app.py)                  │   JSON   │  · User auth (bcrypt)               │
+│  · Make / play games       │ ◄─────── │  · Session tokens                   │
+│  · Login / signup          │          │  · Game CRUD + gallery              │
+│  · Browse community gallery│          │  · Gemini game generation (POST /api/generate) │
+└────────────────────────────┘          │  · SQLAlchemy → SQLite/Postgres     │
+       UI layer                        └─────────────────────────────────────┘
+                                              API + database + AI layer
 ```
+
+**Where the AI runs:** game generation (Gemini) happens **on the FastAPI backend**
+via `POST /api/generate`. The Streamlit frontend just sends the idea and gets
+ready-to-play HTML back — so the Gemini key lives only on the backend, where it
+belongs.
 
 | Layer | Tech | File |
 |---|---|---|
@@ -71,7 +77,7 @@ Grab one at **[Google AI Studio](https://aistudio.google.com/apikey)** (free).
 ### 2. Install
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/Palak-eng/AI-GAME-GENERATOR.git
 cd AI-GAME-GENERATOR
 pip install -r requirements.txt
 ```
@@ -88,7 +94,7 @@ Edit `.env` and replace `your_key_here`:
 GEMINI_API_KEY=AIzaSyYourActualKeyHere
 ```
 
-### 4. Start the backend API
+### 4. Start the backend API (does the AI generation)
 
 ```bash
 uvicorn api:app --port 8000
@@ -113,33 +119,47 @@ account, and start making games!
 
 ## 🌍 Deploy it free online
 
-### Option A: Everything on Render (recommended, database-backed)
+Two free services, connected by the `API_BASE_URL`:
+
+| Service | Hosts | Where |
+|---|---|---|
+| FastAPI backend + AI | [Render](https://render.com) (free web service) | `GEMINI_API_KEY` + optional `DATABASE_URL` |
+| Streamlit frontend | [Streamlit Community Cloud](https://share.streamlit.io) | `API_BASE_URL` only |
+
+### Backend → Render
 
 1. Push this repo to GitHub.
-2. On [Render.com](https://render.com), create a **Web Service** for the API:
+2. On Render, **New → Web Service** → connect the repo.
    - Build: `pip install -r requirements.txt`
    - Start: `uvicorn api:app --host 0.0.0.0 --port 10000`
-   - Set an env var `GEMINI_API_KEY=...`
-   - (Optional) add a free Postgres and set `DATABASE_URL=...`
-3. Create a **Static Site** (or second web service) for the frontend, or run the
-   Streamlit app on **Streamlit Community Cloud** pointing at `app.py`, and set
-   the `API_BASE_URL` secret to your Render API URL.
+   - Plan: Free
+3. Environment: add `GEMINI_API_KEY=...`
+4. **For persistent accounts/games** (SQLite is wiped on free-tier restarts):
+   add a free **Postgres** database on Render and set `DATABASE_URL` to its
+   internal connection string. The app reads it automatically — no code change.
+5. Verify: open `https://your-api.onrender.com/health` → `{"status":"ok"}`.
 
-### Option B: Streamlit Community Cloud (frontend only)
+> One-click option: this repo includes a `render.yaml` blueprint. On Render,
+> **New → Blueprint** and point it at the repo to provision the web service
+> **and** Postgres together. Set `GEMINI_API_KEY` as an env var after.
 
-1. Push this repo to GitHub.
-2. Go to [share.streamlit.io](https://share.streamlit.io) → **Create app** →
+### Frontend → Streamlit Community Cloud
+
+1. Go to [share.streamlit.io](https://share.streamlit.io) → **Create app** →
    your repo → main file `app.py` → **Deploy**.
-3. Add your key under **Settings → Secrets**: `GEMINI_API_KEY=...`
-4. Note: for the *gallery* to work, the FastAPI backend must also be deployed
-   and `API_BASE_URL` pointed at it.
+2. **Settings → Secrets**, add exactly:
+   ```toml
+   API_BASE_URL = "https://your-api.onrender.com"
+   ```
+   (The Gemini key is **not** needed here — generation runs on the backend.)
 
 ---
 
 ## 🧪 CI / Development
 
 GitHub Actions runs on every push: **ruff lint**, **format check**, and
-**pytest** (28 tests covering the AI pipeline + full API incl. auth & gallery).
+**pytest** (34 tests covering the AI pipeline + full API incl. auth, gallery,
+and game generation).
 
 ```bash
 pip install -e ".[dev]"
@@ -163,7 +183,8 @@ AI-GAME-GENERATOR/
 ├── .env.example           # API key template
 ├── .streamlit/            # Theme config
 ├── .github/workflows/     # CI
-└── tests/                 # 28 unit/API tests
+├── render.yaml            # Render blueprint (web service + Postgres)
+└── tests/                 # 34 unit/API tests
 ```
 
 ## 📄 License

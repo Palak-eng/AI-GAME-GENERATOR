@@ -60,6 +60,13 @@ def list_mine(token: str) -> list:
     return _handle(r)
 
 
+def generate(prompt: str, style: str = "arcade", timeout: int = 120) -> dict:
+    """Ask the backend to generate a game (runs Gemini server-side)."""
+    payload = {"prompt": prompt, "style": style}
+    r = requests.post(f"{BASE_URL}/api/generate", json=payload, timeout=timeout)
+    return _handle(r)
+
+
 def get_game(token: str, game_id: int) -> dict:
     r = requests.get(f"{BASE_URL}/api/games/{game_id}", headers=_auth(token), timeout=15)
     return _handle(r)

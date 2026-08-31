@@ -148,3 +148,31 @@ class TestGames:
 class TestHealth:
     def test_health(self):
         assert client.get("/health").json() == {"status": "ok"}
+
+
+class TestGenerate:
+    def test_generate_returns_code(self, monkeypatch):
+        def fake_generate(prompt, style="arcade"):
+            return "✨ Enhanced idea", "<!DOCTYPE html><html><body><canvas></canvas></body></html>"
+
+        monkeypatch.setattr("api.generate_game", fake_generate)
+        r = client.post("/api/generate", json={"prompt": "cat jumps over dogs", "style": "retro"})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["enhanced"] == "✨ Enhanced idea"
+        assert "<html>" in body["code"]
+
+    def test_generate_requires_prompt(self):
+        r = client.post("/api/generate", json={"style": "arcade"})
+        assert r.status_code == 422
+
+    def test_generate_surfaces_generation_error(self, monkeypatch):
+        from generator import GameGenerationError
+
+        def fake_bad(prompt, style="arcade"):
+            raise GameGenerationError("oops, no key")
+
+        monkeypatch.setattr("api.generate_game", fake_bad)
+        r = client.post("/api/generate", json={"prompt": "x", "style": "arcade"})
+        assert r.status_code == 502
+        assert "oops, no key" in r.json()["detail"]

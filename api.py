@@ -22,6 +22,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, create_engine
 from sqlalchemy.orm import Session, declarative_base, relationship, sessionmaker
 
+from generator import GameGenerationError, generate_game
+
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./gamelab.db")
 
 engine = create_engine(
@@ -101,6 +103,11 @@ class GameCreate(BaseModel):
 class GameUpdate(BaseModel):
     is_public: int | None = None
     title: str | None = None
+
+
+class GenerateRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=500)
+    style: str = "arcade"
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -259,6 +266,23 @@ def delete_game(game_id: int, user: User = Depends(_get_current_user), db: Sessi
         raise HTTPException(status_code=404, detail="Game not found")
     db.delete(game)
     db.commit()
+
+
+@app.post("/api/generate")
+def generate(req: GenerateRequest):
+    """Generate a playable HTML5 game from a text idea.
+
+    The heavy AI work (Gemini) runs here on the backend, reading the key from
+    the GEMINI_API_KEY env var. The Streamlit frontend just POSTs the idea and
+    receives ready-to-save `code` + an `enhanced` design brief back.
+    """
+    try:
+        enhanced, code = generate_game(req.prompt, style=req.style)
+    except GameGenerationError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    except Exception as e:  # noqa: BLE001 - surface unexpected failures cleanly
+        raise HTTPException(status_code=500, detail=f"Generation failed: {e}") from e
+    return {"enhanced": enhanced, "code": code}
 
 
 @app.get("/health")
