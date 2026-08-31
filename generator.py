@@ -1,29 +1,39 @@
-from google import genai
-from dotenv import load_dotenv
+import contextlib
 import os
 import re
+import shutil
 import subprocess
 import tempfile
-import shutil
+
+from dotenv import load_dotenv
+from google import genai
 
 load_dotenv()
 
-API_KEY = os.getenv("GEMINI_API_KEY")
-
-if not API_KEY:
-    raise RuntimeError(
-        "GEMINI_API_KEY is not set. Add it to your .env file as "
-        "GEMINI_API_KEY=your_key_here before running the app."
-    )
-
-client = genai.Client(api_key=API_KEY)
+_client: genai.Client | None = None
 
 
 # ─── Custom exception for clean error surfacing in the UI ───────────────────
 
+
 class GameGenerationError(Exception):
     """Raised when prompt enhancement or code generation fails in a known way."""
+
     pass
+
+
+def _get_client() -> genai.Client:
+    """Lazily initialize the Gemini client so imports don't crash without a key."""
+    global _client
+    if _client is None:
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            raise GameGenerationError(
+                "GEMINI_API_KEY is not set. Add it to your .env file as "
+                "GEMINI_API_KEY=your_key_here before running the app."
+            )
+        _client = genai.Client(api_key=api_key)
+    return _client
 
 
 # ─── Prompt Enhancer ─────────────────────────────────────────────────────────
@@ -73,7 +83,7 @@ def _extract_text(response) -> str:
 def _call_model(contents: str, temperature: float, max_output_tokens: int):
     """Wraps the Gemini API call with consistent error handling."""
     try:
-        response = client.models.generate_content(
+        response = _get_client().models.generate_content(
             model="models/gemini-2.5-flash",
             contents=contents,
             config={"temperature": temperature, "max_output_tokens": max_output_tokens},
@@ -240,9 +250,7 @@ def _node_syntax_check(js_code: str):
         return None
     tmp_path = None
     try:
-        with tempfile.NamedTemporaryFile(
-            "w", suffix=".js", delete=False, encoding="utf-8"
-        ) as f:
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as f:
             f.write(js_code)
             tmp_path = f.name
         result = subprocess.run(
@@ -256,10 +264,8 @@ def _node_syntax_check(js_code: str):
         return None
     finally:
         if tmp_path:
-            try:
+            with contextlib.suppress(OSError):
                 os.remove(tmp_path)
-            except OSError:
-                pass
 
 
 def is_code_complete(code: str) -> bool:
@@ -334,7 +340,7 @@ def _parse_combined_response(raw_text: str, fallback_prompt: str) -> tuple[str, 
     if html_start:
         enhanced = text[: html_start.start()].strip()
         enhanced = re.sub(r"===.*?===", "", enhanced, flags=re.DOTALL).strip()
-        code = clean_code(text[html_start.start():])
+        code = clean_code(text[html_start.start() :])
         return (enhanced or f"A fun {fallback_prompt} game, brought to life!"), code
 
     # Last resort: treat everything as code
@@ -355,6 +361,7 @@ def generate_game(prompt: str, style: str = "arcade", on_progress=None) -> tuple
     two) to conserve quota on free-tier Gemini keys — see the note above
     SYSTEM_PROMPT.
     """
+
     def report(pct: int, msg: str):
         if on_progress:
             on_progress(pct, msg)
@@ -397,7 +404,10 @@ Begin now:"""
     attempts = 0
     while not is_code_complete(code) and attempts < MAX_CONTINUATIONS:
         attempts += 1
-        report(65 + attempts * 10, f"🔧 Code got cut off — adding the missing part (pass {attempts}/{MAX_CONTINUATIONS})...")
+        report(
+            65 + attempts * 10,
+            f"🔧 Code got cut off — adding the missing part (pass {attempts}/{MAX_CONTINUATIONS})...",
+        )
         code = code + "\n" + continue_code(code, enhanced, style_desc)
         report(65 + attempts * 10 + 5, "🔍 Re-checking completeness...")
 

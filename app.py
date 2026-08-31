@@ -1,12 +1,15 @@
-import streamlit as st
-import streamlit.components.v1 as components
 import os
 import uuid
-from generator import generate_game, GameGenerationError
+
+import streamlit as st
+import streamlit.components.v1 as components
+
+from generator import GameGenerationError, generate_game
 
 st.set_page_config(page_title="🎮 AI Game Generator", page_icon="🎮", layout="centered")
 
-st.markdown("""
+st.markdown(
+    """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Inter:wght@400;600&display=swap');
 
@@ -79,12 +82,17 @@ st.markdown("""
         width: 100%;
     }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 # ── Header ───────────────────────────────────────────────────────────────────
 st.markdown("<h1>🎮 AI Game Generator</h1>", unsafe_allow_html=True)
-st.markdown("<p class='subtitle'>Just type a simple idea — AI will design and build the whole game for you!</p>",
-            unsafe_allow_html=True)
+st.markdown(
+    "<p class='subtitle'>"
+    "Just type a simple idea — AI will design and build the whole game for you!</p>",
+    unsafe_allow_html=True,
+)
 st.divider()
 
 # ── Example prompts ──────────────────────────────────────────────────────────
@@ -99,8 +107,10 @@ EXAMPLES = [
     ("🐠", "fish dodges sharks"),
 ]
 
-st.markdown("<p style='color:#475569;font-size:0.8rem;margin-bottom:4px;'>✨ Quick ideas — click any:</p>",
-            unsafe_allow_html=True)
+st.markdown(
+    "<p style='color:#475569;font-size:0.8rem;margin-bottom:4px;'>✨ Quick ideas — click any:</p>",
+    unsafe_allow_html=True,
+)
 
 # ── Session state setup ──────────────────────────────────────────────────────
 # A unique per-browser-session ID, used to keep each user's generated file separate
@@ -116,12 +126,12 @@ if "result" not in st.session_state:
     st.session_state.result = None  # will hold {"enhanced": str, "code": str, "path": str}
 
 cols = st.columns(len(EXAMPLES))
-for col, (emoji, label) in zip(cols, EXAMPLES):
+for col, (emoji, label) in zip(cols, EXAMPLES, strict=True):
     with col:
         st.markdown('<div class="example-btn">', unsafe_allow_html=True)
         if st.button(f"{emoji} {label}", key=f"ex_{label}", use_container_width=True):
             st.session_state.prefill = label
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -189,10 +199,13 @@ if st.session_state.result:
     st.markdown(
         f"<div class='enhanced-label'>✨ AI upgraded your idea to:</div>"
         f"<div class='enhanced-box'>{result['enhanced']}</div>",
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
-    st.success("🎉 Game ready! Play it right below — click the canvas first so your keyboard controls work.")
+    st.success(
+        "🎉 Game ready! Play it right below — "
+        "click the canvas first so your keyboard controls work."
+    )
 
     # ── Playable game, embedded live in the app ─────────────────────────────
     components.html(result["code"], height=650, scrolling=False)
