@@ -8,6 +8,8 @@ import tempfile
 from dotenv import load_dotenv
 from google import genai
 
+import templates
+
 load_dotenv()
 
 _client: genai.Client | None = None
@@ -513,6 +515,138 @@ def _parse_combined_response(raw_text: str, fallback_prompt: str) -> tuple[str, 
     return f"A fun {fallback_prompt} game, brought to life!", clean_code(text)
 
 
+# ─── Curated template engine ─────────────────────────────────────────────────
+# We hand-build a few polished, phone+PC-tested base games. When a kid's idea
+# matches one, we RESKIN it with Gemini (only rewrite the THEME VARS + entity
+# art), which is far more consistent than inventing a game from scratch.
+
+
+def pick_template(prompt: str) -> str | None:
+    """Return the template key (.e.g 'runner') best matching the idea, or None."""
+    text = prompt.lower()
+    # collector-ish: grab / collect / items / gems / catch / gather / stars
+    if any(
+        w in text
+        for w in [
+            "collect",
+            "grab",
+            "gather",
+            "catch",
+            "gem",
+            "stars",
+            "coins",
+            "candy",
+            "fruit",
+            "catch the",
+            "pick up",
+            "collect the",
+            "treasure",
+            "berries",
+            "fish",
+            "catch falling",
+        ]
+    ):
+        return "collector"
+    # runner-ish: run / jump / dodge / avoid / obstacle / endless / race / forest
+    if any(
+        w in text
+        for w in [
+            "run",
+            "runner",
+            "jump",
+            "dodge",
+            "avoid",
+            "obstacle",
+            "endless",
+            "race",
+            "forest",
+            "desert",
+            "skateboard",
+            "parkour",
+            "speedy",
+            "escapes",
+            "chase",
+        ]
+    ):
+        return "runner"
+    return None
+
+
+def _template_by_key(key: str) -> str:
+    if key == "collector":
+        return templates.COLLECTOR
+    return templates.RUNNER
+
+
+def _reskin_template(base_code: str, key: str, prompt: str, style_desc: str) -> str:
+    """Ask Gemini to reskin a curated template for the kid's idea.
+
+    The model rewrites the THEME VARS (name, colors, player/entity draw
+    functions) and the on-screen texts, keeping the proven game logic intact.
+    """
+    reskin_prompt = f"""You are reskinning a proven, working HTML5 canvas game so it matches a kid's new idea.
+
+Visual style for the reskin: {style_desc}
+The kid's idea: {prompt}
+
+The base game below is a "{key}" template. It is CORRECT and fully working — do NOT
+change the game logic, physics, collision, scoring, levels, or controls. Only:
+
+1. Rewrite the "THEME VARS" block near the top of the <script>:
+   - GAME_NAME → a fun title for this idea
+   - THEME colors → fit the new theme and the requested art style
+   - drawPlayer / drawObstacle (runner) or drawPlayer/drawItem/drawEnemy
+     (collector) → redraw the shapes to fit the new characters
+     (e.g. if the idea is "cat collecting fish", the player becomes a cat shape,
+     the items become fish, enemies become dogs, etc.)
+   Keep each entity drawn with real shapes (arc/lineTo paths), never a plain
+   rectangle, and keep the ON-SCREEN controls and hint bar text accurate.
+2. Update the start-screen GOAL text and any flavor text to match the theme.
+3. Keep it 100% self-contained (no external assets) and keep the exact same
+   structure: <!DOCTYPE html> ... </html>, script ends with </script>.
+4. Do NOT use ctx.roundRect() (unsupported on some browsers).
+
+Output ONLY the complete reskinned HTML file, no extra text, no markdown, ending in </html>.
+Base game to reskin:
+<code>
+{base_code}
+</code>"""
+
+    text = _call_model(reskin_prompt, temperature=0.9, max_output_tokens=16384)
+    fixed = clean_code(text)
+    if is_code_complete(fixed) and not has_risky_canvas_api(fixed):
+        return fixed
+    return base_code  # if the reskin failed validation, keep the proven base
+
+
+def _generate_from_template(prompt: str, key: str, style_desc: str, report) -> tuple[str, str]:
+    base = _template_by_key(key)
+    report(35, f"🎨 Using the proven {key} base and reskinning it for your idea...")
+    code = _reskin_template(base, key, prompt, style_desc)
+    if code is base:
+        # Reskin failed validation — the known-good base still plays well.
+        report(70, "🧐 Reskin had an issue, keeping the polished base version.")
+    else:
+        report(70, "🔍 Checking the reskinned game is complete and valid...")
+        if is_code_complete(code) and not has_risky_canvas_api(code):
+            code = review_and_fix(code, prompt, style_desc)
+            if is_code_complete(code):
+                pass
+            else:
+                code = base
+    report(100, "🎉 Game ready to play!")
+    enhanced = _enhanced_blurb(prompt, key)
+    return enhanced, code
+
+
+def _enhanced_blurb(prompt: str, key: str) -> str:
+    kind = {
+        "runner": "an exciting run-and-jump adventure",
+        "collector": "a fun collect-and-dodge quest",
+    }[key]
+    return f"A {prompt.strip()} game — {kind} with clear goals, rising levels, and big scores. 💫"
+
+
 def generate_game(prompt: str, style: str = "arcade", on_progress=None) -> tuple[str, str]:
     """
     Returns (enhanced_prompt, game_html) so the UI can show what was improved
@@ -542,6 +676,13 @@ def generate_game(prompt: str, style: str = "arcade", on_progress=None) -> tuple
     style_desc = style_hints.get(style, style_hints["arcade"])
 
     report(5, "🧠 Reading your idea...")
+
+    # Template path (primary): if the idea matches a proven base game, reskin it
+    # for consistency instead of inventing from scratch. Falls back to the full
+    # LLM generation below if no template matches.
+    template_key = pick_template(prompt)
+    if template_key:
+        return _generate_from_template(prompt, template_key, style_desc, report)
 
     full_prompt = f"""{GAME_DESIGN_RULES}
 

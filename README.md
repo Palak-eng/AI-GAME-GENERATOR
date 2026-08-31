@@ -60,6 +60,14 @@ belongs.
 | Auth | bcrypt + session tokens | `api.py` |
 | API client | `requests` | `apiclient.py` |
 | AI pipeline | Google Gemini | `generator.py` |
+| Curated game templates | Hand-built base games | `templates.py` |
+
+**How game quality stays consistent:** instead of only letting the LLM invent a
+game from scratch, matching ideas are RESKINNED from hand-built, phone+PC-tested
+base templates in `templates.py` (runner, collector). Gemini rewrites the theme,
+colors, and characters while the proven game logic stays intact — then a
+self-review pass fixes any residual bugs. Unmatched ideas still generate fully
+from scratch.
 
 ### Why a real backend?
 
@@ -158,8 +166,8 @@ Two free services, connected by the `API_BASE_URL`:
 ## 🧪 CI / Development
 
 GitHub Actions runs on every push: **ruff lint**, **format check**, and
-**pytest** (34 tests covering the AI pipeline + full API incl. auth, gallery,
-and game generation).
+**pytest** (39 tests covering the AI pipeline incl. the template engine + full
+API incl. auth, gallery, and game generation).
 
 ```bash
 pip install -e ".[dev]"
@@ -177,6 +185,7 @@ AI-GAME-GENERATOR/
 ├── api.py                 # FastAPI backend: auth, games, gallery
 ├── apiclient.py           # Small HTTP client for the UI → API
 ├── generator.py           # AI pipeline: design → code → validate → fix
+├── templates.py           # Hand-built, phone+PC-tested base-game templates
 ├── gen_features.py        # Frontend helpers
 ├── requirements.txt       # Runtime dependencies
 ├── pyproject.toml         # Lint/test config
@@ -184,7 +193,7 @@ AI-GAME-GENERATOR/
 ├── .streamlit/            # Theme config
 ├── .github/workflows/     # CI
 ├── render.yaml            # Render blueprint (web service + Postgres)
-└── tests/                 # 34 unit/API tests
+└── tests/                 # 39 unit/API tests
 ```
 
 ## 📄 License

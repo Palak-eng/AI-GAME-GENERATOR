@@ -4,7 +4,32 @@ from generator import (
     clean_code,
     has_risky_canvas_api,
     is_code_complete,
+    pick_template,
 )
+from templates import COLLECTOR, RUNNER
+
+
+class TestTemplates:
+    def test_runner_template_valid(self):
+        assert is_code_complete(RUNNER) is True
+        assert not has_risky_canvas_api(RUNNER)
+        assert "requestAnimationFrame" in RUNNER
+
+    def test_collector_template_valid(self):
+        assert is_code_complete(COLLECTOR) is True
+        assert not has_risky_canvas_api(COLLECTOR)
+        assert "requestAnimationFrame" in COLLECTOR
+
+    def test_pick_template_runner(self):
+        assert pick_template("a robot run and jump over obstacles") == "runner"
+        assert pick_template("speedy forest parkour racing") == "runner"
+
+    def test_pick_template_collector(self):
+        assert pick_template("a cat collecting candy and gems") == "collector"
+        assert pick_template("catch falling fruit") == "collector"
+
+    def test_pick_template_none(self):
+        assert pick_template("a wizard fights a dragon with spells") is None
 
 
 class TestCleanCode:
