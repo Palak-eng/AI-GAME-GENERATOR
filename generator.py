@@ -150,7 +150,21 @@ Before writing any code, design the whole game in your head:
 
 SYSTEM_PROMPT = """You are a senior HTML5 game developer who makes VISUALLY STUNNING, FINISHED-POLISH browser games
 using the Canvas 2D API and vanilla JavaScript. These games are for kids — they must look like a real
-published arcade game, not a demo. They must run by simply opening an HTML file in a browser.
+published arcade game, and above all they must actually be FUN and WORK CORRECTLY.
+
+════════════════════════════════════════════════
+ OVERRIDING PRINCIPLE — CORRECT & CLEAR > FLASHY
+════════════════════════════════════════════════
+The #1 priority is a game that plays CORRECTLY with clear, obvious controls.
+- Every control must be EXPLAINED on screen — a small "controls" hint bar at the bottom
+  (e.g. "← → / A D to move · SPACE to shoot") and an on-screen Prompt button/start screen.
+- A kid must understand how to play within 5 seconds of seeing it. No hidden mechanics.
+- The player character must actually MOVE smoothly (use delta-timed velocity, never fight
+  frames). Test the math mentally: collisions, spawns, and restarts must all work logically.
+- Every feature you add must be FULLY implemented and actually work. Never stub, never fake it.
+  If you say a power-up makes multi-balls, then ACTUALLY create multiple ball objects.
+- NO logic bugs: no overlapping colliders, no off-screen spawns, no controls that stop working,
+  no restart that doesn't fully reset state.
 
 ════════════════════════════════════════════════
  OUTPUT FORMAT — CRITICAL
@@ -171,7 +185,8 @@ Add real sound using the Web Audio API (oscillators / gain envelopes — no exte
 - At least 3 different sounds: e.g. shoot, jump, explosion, coin/pickup, power-up, level-up, game-over
 - Small helper functions like playTone(freq, dur, type, vol) using AudioContext + oscillator
 - A sound toggle button so kids can mute it (press M or click a speaker icon in the corner)
-- Background music is optional but welcome (a simple looping melody or rhythmic pattern)
+- Note: browsers block audio until user interaction — initialize the AudioContext on the FIRST
+  click/keypress (start button or first input), never at page load.
 
 ════════════════════════════════════════════════
  GRAPHICS — THIS IS THE MOST IMPORTANT SECTION
@@ -212,22 +227,23 @@ Example palettes:
 
 RULE 5 — UI POLISH:
   - Score/lives text: draw shadow first (dark color, +2px offset), then bright text on top
-  - Health bar: rounded rect background (dark) + colored fill + white border
+  - A small always-visible "controls" hint bar (e.g. bottom-left corner, faint text)
+  - Health bar / lives icon: rounded rect background (dark) + colored fill + white border
   - Game Over screen: semi-transparent dark overlay + big styled text + "Press R or tap to restart" hint
 
 ════════════════════════════════
  GAMEPLAY REQUIREMENTS
 ════════════════════════════════
 - Fun and immediately playable by a child, mouse/touch AND keyboard both work
-- Scoring system shown on screen at all times, and a HIGH SCORE saved to localStorage
-- Clear win condition OR survive-as-long-as-possible with high score
+- CLEAR win/lose condition, and a scoring system shown on screen at all times, plus a HIGH SCORE saved to localStorage
+- Clear win condition OR survive-as-long-as-possible with an increasing high score
 - At least 2 different enemy/obstacle types with different behaviors
-- At least 2 power-ups or bonus items with different effects
+- At least 2 power-ups or bonus items with DIFFERENT REAL effects that actually work
 - Difficulty increases over time (enemies get faster, more spawn, etc.)
 - Controls: Arrow keys or WASD for movement, SPACE to shoot/jump. ALSO support click/tap
   (so it works on phones/tablets when a friend opens the shared file)
 - On Game Over: show "Press R or tap Restart button to play again" — clicking/tapping restarts
-  the game WITHOUT needing to reload the page (reset all game state variables and resume the loop)
+  the game WITHOUT needing to reload the page (reset ALL game state variables and resume the loop)
 - REPLAYABILITY IS CRITICAL: the restart must fully reset score, entities, and difficulty so the
   SAME file can be played again and again with no reload
 - Keep all themes child-friendly and cartoonish, even for "survival" or "battle" ideas — no
@@ -236,15 +252,15 @@ RULE 5 — UI POLISH:
 ════════════════════════════════
  CODE REQUIREMENTS
 ════════════════════════════════
-- Use requestAnimationFrame for the game loop (not setInterval)
+- Use requestAnimationFrame for the game loop (not setInterval), and handle ALL input inside the loop
 - canvas width=800 height=600, set via the <canvas> tag attributes
 - Add a viewport meta tag and a little CSS so the canvas is centered with a dark page background
   (so it looks good full-screen when opened directly)
 - document.title should be a short fun name for the game
 - No empty function bodies, no placeholder comments — every function fully implemented
 - Wrap the game in an IIFE or DOMContentLoaded listener so it runs immediately on file open
-- Use fixed timestep-friendly delta-time (multiply movement by dt) so the game runs the same speed
-  on all devices, not just fast computers
+- Use delta-time (multiply all movement by dt) so the game runs the same speed on all devices
+- Keep the whole game less than ~30KB and organize code with clear sections
 
 ABSOLUTELY FORBIDDEN:
 - Single-color rectangles for any game character or enemy
@@ -252,6 +268,20 @@ ABSOLUTELY FORBIDDEN:
 - Any external script/link/image/font references (must be 100% self-contained, works offline)
 - Any non-HTML/CSS/JS text in output
 - Incomplete code that cuts off before </html>
+
+════════════════════════════════════════════════
+ BROWSER COMPATIBILITY — NEVER LET THE GAME GO BLACK
+════════════════════════════════════════════════
+- Never call a Canvas API that may be missing on older browsers at a point that
+  would crash the whole loop. In particular, DO NOT use context.roundRect() —
+  it is not supported everywhere. Draw rounded rectangles manually with
+  beginPath + moveTo + arcTo/quadraticCurveTo instead, or wrap any newer API
+  call in an `if (ctx.roundRect)` guard / define a small helper fallback.
+- Wrap the game loop in try/catch is NOT enough — ensure the FIRST frame cannot
+  throw, so the loop always starts and renders something.
+- If any browser-specific feature is used, include a tiny inline polyfill fallback.
+- The canvas must ALWAYS draw a visible background on frame one — never a black/
+  blank screen. Test mentally that draw() runs on every state (including start).
 """
 
 MAX_CONTINUATIONS = 2
@@ -326,6 +356,21 @@ def is_code_complete(code: str) -> bool:
     return True
 
 
+# Canvas APIs that aren't reliably available on all browsers and would crash the
+# game (→ black screen) if called unguarded on the first frame.
+_RISKY_CANVAS_APIS = ["roundrect"]
+
+
+def has_risky_canvas_api(code: str) -> bool:
+    """True if the code calls a risky API like roundRect without a guard."""
+    lower = code.lower()
+    for api in _RISKY_CANVAS_APIS:
+        # crude heuristic: presence of the call AND no obvious guard polyfill
+        if api in lower and f"if (ctx.{api}" not in lower and f"if (this.ctx.{api}" not in lower:
+            return True
+    return False
+
+
 def continue_code(partial_code: str, enhanced_prompt: str, style_desc: str) -> str:
     continuation_prompt = f"""You were writing a self-contained HTML5 Canvas game for: "{enhanced_prompt}" (style: {style_desc})
 
@@ -340,6 +385,59 @@ Output ONLY code. No markdown. No explanations."""
 
     text = _call_model(continuation_prompt, temperature=0.3, max_output_tokens=32768)
     return clean_code(text)
+
+
+def review_and_fix(code: str, enhanced_prompt: str, style_desc: str) -> str:
+    """
+    Sends the generated game code back to the model for a self-review pass.
+    The model checks for logic bugs, broken controls, non-functional features,
+    and unclear UX, then returns a FIXED, complete HTML file. This dramatically
+    improves quality over a single-shot generation.
+
+    Returns the improved complete HTML (or the original code if anything fails,
+    so the pipeline never hard-fails here).
+    """
+    review_prompt = f"""You are a quality-control game tester for kids' HTML5 canvas games.
+Here is a COMPLETE self-contained HTML5 game:
+
+Game concept: {enhanced_prompt}
+Style: {style_desc}
+
+Game code:
+<code>
+{code}
+</code>
+
+Your job: find and fix real bugs that would make a kid confused or frustrated. Focus on:
+1. CONTROLS — is the player moved smoothly (delta-time velocity)? Are controls clear with an
+   on-screen hint? Do click/tap AND keyboard both work? Don't use setInterval to read input —
+   read it inside the requestAnimationFrame loop.
+2. CORRECTNESS — collisions that miss or jitter, off-screen spawns, overlapping colliders,
+   a restart that doesn't fully reset, entities that move faster on fast computers.
+3. FEATURES THAT ARE FAKED — e.g. a "multi-ball" power-up that doesn't create more balls, or a
+   stub function. Make promised features actually work.
+4. AUDIO — AudioContext must be created/resumed on the FIRST user interaction (start button /
+   first click/keypress), never at page load (browsers block it otherwise).
+5. START/END FLOW — a clear Start screen that starts on click/space, and a Game Over screen
+   that fully restarts on click/R without reloading.
+6. BROWSER COMPAT — if the code calls context.roundRect() (or any recent Canvas API) WITHOUT a
+   guard/polyfill or manual rounded-rectangle helper, REPLACE it so the game cannot throw on
+   older browsers and go black. A black/blank first frame is the #1 killer — make sure draw()
+   always paints a visible background in every state.
+7. It must play as a coherent, fun, finished game, not a buggy prototype.
+
+Fix any bugs you find. Output the COMPLETE fixed HTML file and ONLY that (the entire
+<!DOCTYPE html>...</html>, no extra text, no markdown). If it's already perfect, output the
+original code unchanged but still fully complete."""
+
+    try:
+        text = _call_model(review_prompt, temperature=0.3, max_output_tokens=32768)
+        fixed = clean_code(text)
+        if is_code_complete(fixed) and not has_risky_canvas_api(fixed):
+            return fixed
+    except GameGenerationError:
+        pass
+    return code
 
 
 def _parse_combined_response(raw_text: str, fallback_prompt: str) -> tuple[str, str]:
@@ -445,6 +543,12 @@ Begin now:"""
             "The AI generated incomplete or invalid code after several attempts. "
             "Please try again — sometimes a shorter or simpler idea works better."
         )
+
+    # Self-review pass: send the code back to the model to find & fix bugs
+    report(80, "🔬 Quality-checking & fixing bugs... (one more pass)")
+    improved = review_and_fix(code, enhanced, style_desc)
+    if is_code_complete(improved):
+        code = improved
 
     report(100, "🎉 Game ready to play!")
     return enhanced, code

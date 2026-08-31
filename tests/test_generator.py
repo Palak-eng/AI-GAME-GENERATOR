@@ -1,4 +1,10 @@
-from generator import GameGenerationError, _parse_combined_response, clean_code, is_code_complete
+from generator import (
+    GameGenerationError,
+    _parse_combined_response,
+    clean_code,
+    has_risky_canvas_api,
+    is_code_complete,
+)
 
 
 class TestCleanCode:
@@ -16,6 +22,21 @@ class TestCleanCode:
     def test_plain_html_unchanged(self):
         html = "<!DOCTYPE html><html><body>test</body></html>"
         assert clean_code(html) == html
+
+
+class TestHasRiskyCanvasApi:
+    def test_unguarded_roundrect_detected(self):
+        assert has_risky_canvas_api(
+            "<script>ctx.roundRect(10, 20, 30, 40, 5);</script>"
+        ) is True
+
+    def test_guarded_roundrect_ok(self):
+        assert has_risky_canvas_api(
+            "<script>if (ctx.roundRect) { ctx.roundRect(10, 20, 30, 40, 5); }</script>"
+        ) is False
+
+    def test_safe_apis_ok(self):
+        assert has_risky_canvas_api("<script>ctx.fillRect(1, 2, 3, 4);</script>") is False
 
 
 class TestIsCodeComplete:
