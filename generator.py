@@ -232,22 +232,58 @@ RULE 5 — UI POLISH:
   - Game Over screen: semi-transparent dark overlay + big styled text + "Press R or tap to restart" hint
 
 ════════════════════════════════
- GAMEPLAY REQUIREMENTS
+ GAMEPLAY REQUIREMENTS — NON-NEGOTIABLE
 ════════════════════════════════
-- Fun and immediately playable by a child, mouse/touch AND keyboard both work
-- CLEAR win/lose condition, and a scoring system shown on screen at all times, plus a HIGH SCORE saved to localStorage
-- Clear win condition OR survive-as-long-as-possible with an increasing high score
-- At least 2 different enemy/obstacle types with different behaviors
-- At least 2 power-ups or bonus items with DIFFERENT REAL effects that actually work
-- Difficulty increases over time (enemies get faster, more spawn, etc.)
-- Controls: Arrow keys or WASD for movement, SPACE to shoot/jump. ALSO support click/tap
-  (so it works on phones/tablets when a friend opens the shared file)
-- On Game Over: show "Press R or tap Restart button to play again" — clicking/tapping restarts
-  the game WITHOUT needing to reload the page (reset ALL game state variables and resume the loop)
-- REPLAYABILITY IS CRITICAL: the restart must fully reset score, entities, and difficulty so the
-  SAME file can be played again and again with no reload
-- Keep all themes child-friendly and cartoonish, even for "survival" or "battle" ideas — no
-  realistic violence or gore
+◆ CLEAR GOAL & AIM — Every game MUST have one obvious objective the player is
+  working toward, and it must be shown on the START screen in plain words,
+  e.g. "Collect all 20 gems", "Reach level 10", "Score 500 points to win",
+  "Save the friends before time runs out". If you can't state the goal in one
+  sentence, redesign it. Never ship an aimless, directionless game.
+
+◆ LEVELS / PROGRESSION — The game MUST have real progression, not endless flat
+  play. Use one or more of these:
+  - Discrete LEVELS (e.g. complete 5-10 levels that get visibly harder — more
+    obstacles, faster enemies, new enemy types — with a "Level X complete!"
+    banner and brief pause before the next).
+  - Or steady escalating difficulty with clear milestones (e.g. a wave counter,
+    "Round 3", difficulty tiers that visibly change the gameplay).
+  Each new level/wave should introduce something NEW, not just more of the same.
+
+◆ AIM mentions of controls/menus must never require the SHIFT/CTRL/ALT or letter
+  keys that phones lack. It's fine to ALSO support K/M for desktop, but:
+
+◆ TOUCH-FIRST CONTROLS (phones/tablets) — Games MUST be fully playable on
+  touch with NO on-screen instructions like "press K". Concretely:
+  - On-screen buttons (tap zones) for every action a phone needs: e.g. big
+    LEFT / RIGHT arrows and a JUMP/SHOOT/ACTION button drawn on the canvas.
+  - OR "tap left half / tap right half / tap-and-hold" style controls that are
+    obvious and shown in the hint bar.
+  - The START and GAME OVER screens MUST restart by TAPPING — never only a key.
+  - The bottom hint bar must be written phone-first: show "◀ ▶ to move · TAP to
+    jump", not keyboard-only text.
+  Windows/desktop keyboard (arrows/WASD/space) should still work too.
+
+◆ FUN AND IMMEDIATELY PLAYABLE, mouse/touch AND keyboard both work.
+
+◆ CLEAR win/lose condition, a scoring system shown on screen at all times, and
+  a HIGH SCORE saved to localStorage.
+
+◆ At least 2 different enemy/obstacle types with different behaviors.
+
+◆ At least 2 power-ups or bonus items with DIFFERENT REAL effects that actually
+  work.
+
+◆ Difficulty increases over time OR via levels (enemies get faster, more spawn,
+  new enemy types appear).
+
+◆ On Game Over: show "Tap to play again" — TAPPING (or clicking) restarts
+  WITHOUT reloading the page (reset ALL game state variables and resume loop).
+
+◆ REPLAYABILITY IS CRITICAL: restart must fully reset score, entities, and
+  difficulty so the SAME file can be played again and again with no reload.
+
+◆ Keep all themes child-friendly and cartoonish, even for "survival" or
+  "battle" ideas — no realistic violence or gore.
 
 ════════════════════════════════
  CODE REQUIREMENTS
@@ -409,22 +445,26 @@ Game code:
 </code>
 
 Your job: find and fix real bugs that would make a kid confused or frustrated. Focus on:
-1. CONTROLS — is the player moved smoothly (delta-time velocity)? Are controls clear with an
-   on-screen hint? Do click/tap AND keyboard both work? Don't use setInterval to read input —
-   read it inside the requestAnimationFrame loop.
-2. CORRECTNESS — collisions that miss or jitter, off-screen spawns, overlapping colliders,
+1. CONTROLS (PHONE-FIRST) — the game must be fully playable on TOUCH: on-screen buttons/tap
+   zones or obvious tap-half controls, and NO "press K/letter key" instructions. On-screen
+   hint bar must be phone-first (◀ ▶ to move · TAP to jump). Keyboard should also work but never
+   be required. Don't use setInterval to read input — read it inside the requestAnimationFrame loop.
+2. CLEAR GOAL & LEVELS — there must be ONE obvious objective stated on the START screen, and real
+   progression (discrete levels OR escalating waves/difficulty with visible milestones). Add a
+   goal line and leveling if missing. A game with no aim and no progression must be fixed.
+3. CORRECTNESS — collisions that miss or jitter, off-screen spawns, overlapping colliders,
    a restart that doesn't fully reset, entities that move faster on fast computers.
-3. FEATURES THAT ARE FAKED — e.g. a "multi-ball" power-up that doesn't create more balls, or a
+4. FEATURES THAT ARE FAKED — e.g. a "multi-ball" power-up that doesn't create more balls, or a
    stub function. Make promised features actually work.
-4. AUDIO — AudioContext must be created/resumed on the FIRST user interaction (start button /
+5. AUDIO — AudioContext must be created/resumed on the FIRST user interaction (start button /
    first click/keypress), never at page load (browsers block it otherwise).
-5. START/END FLOW — a clear Start screen that starts on click/space, and a Game Over screen
-   that fully restarts on click/R without reloading.
-6. BROWSER COMPAT — if the code calls context.roundRect() (or any recent Canvas API) WITHOUT a
+6. START/END FLOW — a clear Start screen that starts on TAP/click/space, and a Game Over screen
+   that fully restarts on TAP/click/R without reloading.
+7. BROWSER COMPAT — if the code calls context.roundRect() (or any recent Canvas API) WITHOUT a
    guard/polyfill or manual rounded-rectangle helper, REPLACE it so the game cannot throw on
    older browsers and go black. A black/blank first frame is the #1 killer — make sure draw()
    always paints a visible background in every state.
-7. It must play as a coherent, fun, finished game, not a buggy prototype.
+8. It must play as a coherent, fun, finished game, not a buggy prototype.
 
 Fix any bugs you find. Output the COMPLETE fixed HTML file and ONLY that (the entire
 <!DOCTYPE html>...</html>, no extra text, no markdown). If it's already perfect, output the
