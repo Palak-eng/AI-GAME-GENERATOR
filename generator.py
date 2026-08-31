@@ -13,6 +13,20 @@ load_dotenv()
 _client: genai.Client | None = None
 
 
+def _get_api_key() -> str | None:
+    # On Streamlit Community Cloud the key comes from Secrets.
+    try:
+        import streamlit as st
+
+        secret = st.secrets.get("GEMINI_API_KEY")
+        if secret:
+            return secret
+    except Exception:
+        pass
+    # Locally it comes from the .env file.
+    return os.getenv("GEMINI_API_KEY")
+
+
 # ─── Custom exception for clean error surfacing in the UI ───────────────────
 
 
@@ -26,11 +40,12 @@ def _get_client() -> genai.Client:
     """Lazily initialize the Gemini client so imports don't crash without a key."""
     global _client
     if _client is None:
-        api_key = os.getenv("GEMINI_API_KEY")
+        api_key = _get_api_key()
         if not api_key:
             raise GameGenerationError(
-                "GEMINI_API_KEY is not set. Add it to your .env file as "
-                "GEMINI_API_KEY=your_key_here before running the app."
+                "GEMINI_API_KEY is not set.\n\n"
+                "Locally: add it to your .env file as GEMINI_API_KEY=your_key_here.\n"
+                "On Streamlit Cloud: add it in Settings → Secrets as GEMINI_API_KEY."
             )
         _client = genai.Client(api_key=api_key)
     return _client
@@ -124,18 +139,18 @@ def enhance_prompt(user_prompt: str) -> str:
 # keys have tight daily/per-minute quotas, and every request counts — this
 # cuts the baseline requests-per-generation roughly in half.
 
-GAME_DESIGN_RULES = """You are also a game design expert helping kids create amazing games.
-Before writing code, mentally expand the kid's simple idea into a RICH, DETAILED game design:
-- Keep the core idea the same
+GAME_DESIGN_RULES = """You are a world-class game designer who makes POLISHED, MAGICAL games for kids.
+Before writing any code, design the whole game in your head:
+- Keep the kid's core idea the same, but make it EXCITING and HIGH-QUALITY, not a bare prototype
 - Add: specific visual details, character descriptions, enemy types, power-ups, background details, color themes, sound mood
 - Add: clear win/lose condition, scoring system, difficulty progression
-- Make it exciting and fun-sounding
+- Design it like a real, finished mobile/arcade game a child would love to play for a long time
 - Keep all content suitable for children (no graphic violence or gore, even for "survival" or "zombie" themes — keep it cartoonish and silly)
 """
 
-SYSTEM_PROMPT = """You are a senior HTML5 game developer who makes VISUALLY STUNNING browser games
-using the Canvas 2D API and vanilla JavaScript. These games are for kids — they must look
-colorful, exciting, and polished, and must run by simply opening an HTML file in a browser.
+SYSTEM_PROMPT = """You are a senior HTML5 game developer who makes VISUALLY STUNNING, FINISHED-POLISH browser games
+using the Canvas 2D API and vanilla JavaScript. These games are for kids — they must look like a real
+published arcade game, not a demo. They must run by simply opening an HTML file in a browser.
 
 ════════════════════════════════════════════════
  OUTPUT FORMAT — CRITICAL
@@ -144,10 +159,19 @@ colorful, exciting, and polished, and must run by simply opening an HTML file in
 - Structure: <!DOCTYPE html><html>...<head><style>...</style></head><body>
   <canvas id="game" width="800" height="600"></canvas><script>...</script></body></html>
 - Everything (CSS + JS) must be INLINE in that one file. No external libraries, no CDN links,
-  no external images/fonts/audio files (use Web Audio API oscillators if you want sound, optional).
+  no external images/fonts/audio files.
 - Zero markdown. Zero backticks. Zero explanations before or after the HTML.
 - The very last line of your output must be </html>.
 - CRITICAL: Code must be 100% complete and runnable. Never stop halfway.
+
+════════════════════════════════════════════════
+ SOUND — ADD AUDIO WITH WEB AUDIO API
+════════════════════════════════════════════════
+Add real sound using the Web Audio API (oscillators / gain envelopes — no external files):
+- At least 3 different sounds: e.g. shoot, jump, explosion, coin/pickup, power-up, level-up, game-over
+- Small helper functions like playTone(freq, dur, type, vol) using AudioContext + oscillator
+- A sound toggle button so kids can mute it (press M or click a speaker icon in the corner)
+- Background music is optional but welcome (a simple looping melody or rhythmic pattern)
 
 ════════════════════════════════════════════════
  GRAPHICS — THIS IS THE MOST IMPORTANT SECTION
@@ -167,14 +191,16 @@ Choose ONE of these and implement it fully:
   Option B — Starfield: 150 randomly placed white/yellow dots of varying sizes (1-3px), redrawn each frame
   Option C — Tiled pattern: repeating shapes (clouds, bricks, grass tiles, hex grid) across the canvas
   Option D — Layered parallax: 2-3 layers of simple shapes scrolling at different speeds
+Add moving background details (floating clouds, parallax hills, drifting stars) to feel alive.
 
 RULE 3 — PARTICLES & EFFECTS:
-Include at least 2 of these:
+Include at least 3 of these:
   - Explosion particles: on enemy death, spawn 8-12 small circles flying outward, fading over ~0.5s (track particle objects in an array, update + draw each frame)
   - Glow effect: draw the same shape 2-3x with decreasing size/increasing alpha (radial gradient or shadowBlur)
   - Screen flash: on player hit, briefly fill canvas with a semi-transparent red rectangle
   - Trail effect: store the last 5 positions of the player/bullet, draw fading circles along the path
   - Score popup: floating "+100" text that rises and fades when scoring
+  - Screen shake: on big events (explosion / hit), offset the canvas briefly
 
 RULE 4 — COLOR PALETTE:
 Define at least 8 named color constants (JS consts, hex strings) at the top of the script.
@@ -193,13 +219,13 @@ RULE 5 — UI POLISH:
  GAMEPLAY REQUIREMENTS
 ════════════════════════════════
 - Fun and immediately playable by a child, mouse/touch AND keyboard both work
-- Scoring system shown on screen at all times
+- Scoring system shown on screen at all times, and a HIGH SCORE saved to localStorage
 - Clear win condition OR survive-as-long-as-possible with high score
 - At least 2 different enemy/obstacle types with different behaviors
-- At least 1 power-up or bonus item
+- At least 2 power-ups or bonus items with different effects
+- Difficulty increases over time (enemies get faster, more spawn, etc.)
 - Controls: Arrow keys or WASD for movement, SPACE to shoot/jump. ALSO support click/tap
   (so it works on phones/tablets when a friend opens the shared file)
-- Difficulty increases over time (enemies get faster, more spawn, etc.)
 - On Game Over: show "Press R or tap Restart button to play again" — clicking/tapping restarts
   the game WITHOUT needing to reload the page (reset all game state variables and resume the loop)
 - REPLAYABILITY IS CRITICAL: the restart must fully reset score, entities, and difficulty so the
@@ -217,6 +243,8 @@ RULE 5 — UI POLISH:
 - document.title should be a short fun name for the game
 - No empty function bodies, no placeholder comments — every function fully implemented
 - Wrap the game in an IIFE or DOMContentLoaded listener so it runs immediately on file open
+- Use fixed timestep-friendly delta-time (multiply movement by dt) so the game runs the same speed
+  on all devices, not just fast computers
 
 ABSOLUTELY FORBIDDEN:
 - Single-color rectangles for any game character or enemy
@@ -310,7 +338,7 @@ Do NOT repeat anything already written. Start from the cut-off point.
 The final lines must properly close the game loop, </script>, </body>, and </html>.
 Output ONLY code. No markdown. No explanations."""
 
-    text = _call_model(continuation_prompt, temperature=0.3, max_output_tokens=8192)
+    text = _call_model(continuation_prompt, temperature=0.3, max_output_tokens=32768)
     return clean_code(text)
 
 
@@ -395,7 +423,7 @@ Do BOTH of these in this single response, outputting EXACTLY in this format and 
 Begin now:"""
 
     report(25, "🎨 Designing & writing your full game in one go... (the big step, can take 20-40s)")
-    raw_text = _call_model(full_prompt, temperature=0.75, max_output_tokens=16384)
+    raw_text = _call_model(full_prompt, temperature=0.75, max_output_tokens=32768)
     enhanced, code = _parse_combined_response(raw_text, prompt)
 
     report(65, "🔍 Checking the code is complete and valid...")
