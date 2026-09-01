@@ -150,6 +150,25 @@ class TestHealth:
         assert client.get("/health").json() == {"status": "ok"}
 
 
+class TestDatabaseUrl:
+    def test_sqlite_unchanged(self):
+        from api import _normalize_database_url
+
+        assert _normalize_database_url("sqlite:///./gamelab.db") == "sqlite:///./gamelab.db"
+
+    def test_postgres_gets_psycopg_driver(self):
+        from api import _normalize_database_url
+
+        raw = "postgresql://user:pass@host:5432/gamelab"
+        assert _normalize_database_url(raw) == "postgresql+psycopg://user:pass@host:5432/gamelab"
+
+    def test_postgres_with_driver_unchanged(self):
+        from api import _normalize_database_url
+
+        raw = "postgresql+psycopg://user:pass@host:5432/gamelab"
+        assert _normalize_database_url(raw) == raw
+
+
 class TestGenerate:
     def test_generate_returns_code(self, monkeypatch):
         def fake_generate(prompt, style="arcade"):

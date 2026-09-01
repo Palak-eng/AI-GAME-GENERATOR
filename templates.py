@@ -9,7 +9,7 @@ entities) while keeping the battle-tested core logic intact. This gives ~95%
 consistency instead of random LLM creativity.
 
 Each template key describes the play style so the router can match a kid's idea
-to the closest base game.
+to the closest base game. Keys: "runner", "collector", "shooter".
 
 IMPORTANT for reskinning: each template contains clearly-marked THEME VARS near
 the top (name, colors, art-draw functions) that the AI is told to rewrite.
@@ -381,6 +381,210 @@ window.addEventListener("pointermove",function(e){var rect=cv.getBoundingClientR
 window.addEventListener("pointerup",function(){touch.x=null;touch.y=null;});
 window.addEventListener("keydown",function(e){initAudio();
   if(state==="over"||state==="win"&&(e.code==="Space"||e.code==="Enter")){reset();state="play";}
+  else if(state==="start"&&(e.code==="Space"||e.code==="Enter")){state="play";}
+  keys[e.code]=true;});
+window.addEventListener("keyup",function(e){keys[e.code]=false;});
+cv.addEventListener("contextmenu",function(e){e.preventDefault();});
+})();
+</script>
+</body>
+</html>
+"""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SHOOTER — a top-down (or side) shooter: dodge enemies, shoot them, clear
+# waves/levels, score + high score. Levels get harder with new enemy types.
+# Phone: on-screen LEFT/RIGHT + SHOOT tap zones; drag-tap to aim/shoot.
+# PC: arrows/WASD move, SPACE/click shoots.
+# ─────────────────────────────────────────────────────────────────────────────
+SHOOTER = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Star Blaster</title>
+<style>
+  html,body{margin:0;padding:0;background:#050510;height:100%;overflow:hidden;
+    touch-action:manipulation;-webkit-user-select:none;user-select:none;}
+  #wrap{position:fixed;top:0;left:0;width:100%;height:100%;display:flex;
+    align-items:center;justify-content:center;}
+  canvas{display:block;width:100%;height:100%;object-fit:contain;
+    background:#050510;touch-action:none;cursor:pointer;}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="game" width="800" height="600"></canvas></div>
+<script>
+(function(){
+"use strict";
+var cv=document.getElementById("game"),ctx=cv.getContext("2d");
+// ---------- THEME VARS (rewrite these to reskin) ----------
+var GAME_NAME="Star Blaster";
+var THEME={bg1:"#050510",bg2:"#12122e",accent:"#4ec9ff",player:"#7cff6b",
+  enemy1:"#ff5d5d",enemy2:"#ffb84e",enemy3:"#c88bff",shot:"#ffe14e",shield:"#4ec9ff"};
+function drawPlayer(x,y){ctx.fillStyle=THEME.player;
+  ctx.beginPath();ctx.moveTo(x,y+22);ctx.lineTo(x+16,y-12);ctx.lineTo(x,y-4);
+  ctx.lineTo(x-16,y-12);ctx.closePath();ctx.fill();
+  ctx.fillRect(x-4,y-12,8,16);ctx.fillStyle="#fff";
+  ctx.beginPath();ctx.arc(x,y+2,6,0,7);ctx.fill();}
+function drawEnemy(x,y,r,kind){ctx.fillStyle=kind;
+  ctx.beginPath();ctx.arc(x,y,r,0,7);ctx.fill();
+  ctx.fillStyle="#fff";
+  if(kind===THEME.enemy2){for(var i=0;i<4;i++){var a=i*1.57;
+    ctx.beginPath();ctx.arc(x+Math.cos(a)*(r+4),y+Math.sin(a)*(r+4),3,0,7);ctx.fill();}}
+  else{ctx.beginPath();ctx.arc(x-r*0.3,y-r*0.2,2.5,0,7);ctx.arc(x+r*0.3,y-r*0.2,2.5,0,7);ctx.fill();}}
+// ------------------------------------------------
+var W=800,H=600;
+var bullets=[],enemies=[],shields=[],stars=[];
+var player={x:W/2,y:H-60,r:14,sp:280};
+var score=0,high=parseInt(localStorage.getItem("starBlasterHigh")||"0",10);
+var wave=1,state="start",fireCd=0,shake=0;
+var keys={};
+var touchMove=null;var touchShoot=false;
+function makeStars(){stars=[];for(var i=0;i<140;i++){stars.push({x:Math.random()*W,
+  y:Math.random()*H,s:Math.random()*2+0.5,v:20+Math.random()*40});}}
+makeStars();
+function newWave(n){
+  wave=n;enemies=[];shields=[];
+  var count=4+n;
+  for(var i=0;i<count;i++){
+    var kind=THEME.enemy1;
+    if(n>=3&&Math.random()<0.3)kind=THEME.enemy2;
+    if(n>=5&&Math.random()<0.25)kind=THEME.enemy3;
+    var r=12+(n>=5?16:12);
+    enemies.push({x:40+Math.random()*(W-80),y:-30-Math.random()*120,
+      vx:(Math.random()-0.5)*120,vy:40+n*12,r:r,kind:kind,xdir:(Math.random()<0.5?-1:1)});
+  }
+  if(n%2===0){shields.push({x:30+Math.random()*(W-60),y:80+Math.random()*200});}
+}
+function reset(){score=0;wave=1;bullets=[];newWave(1);player.x=W/2;player.y=H-60;}
+var audio=null,soundOn=true;
+function playTone(f,d,type,vol){if(!soundOn)return;try{
+  if(!audio){audio=new (window.AudioContext||window.webkitAudioContext)();}
+  var o=audio.createOscillator(),g=audio.createGain();
+  o.type=type||"square";o.frequency.value=f;
+  g.gain.setValueAtTime(vol||0.08,audio.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.0001,audio.currentTime+d);
+  o.connect(g);g.connect(audio.destination);o.start();o.stop(audio.currentTime+d);}catch(e){}}
+function initAudio(){if(audio&&audio.state==="suspended")audio.resume();}
+function shoot(){
+  bullets.push({x:player.x,y:player.y-18,vy:-520});playTone(700,0.06,"square",0.05);
+}
+function update(dt){
+  if(state!=="play")return;
+  var mx=0;
+  if(touchMove!==null){var dx=touchMove-player.x;
+    mx=Math.max(-1,Math.min(1,dx/80));}
+  else{mx=(keys["ArrowRight"]||keys["KeyD"]?1:0)-(keys["ArrowLeft"]||keys["KeyA"]?1:0);}
+  player.x+=mx*player.sp*dt;
+  player.x=Math.max(player.r,Math.min(W-player.r,player.x));
+  if(touchShoot&&fireCd<=0){shoot();fireCd=0.18;}
+  else if((keys["Space"]||keys["ArrowUp"])&&fireCd<=0){shoot();fireCd=0.18;}
+  if(fireCd>0)fireCd-=dt;
+  // bullets
+  for(var b=bullets.length-1;b>=0;b--){bullets[b].y+=bullets[b].vy*dt;
+    if(bullets[b].y<-20){bullets.splice(b,1);continue;}
+    for(var e=enemies.length-1;e>=0;e--){var en=e<0?null:enemies[e];
+      if(en&&Math.sqrt((bullets[b].x-en.x)*(bullets[b].x-en.x)+(bullets[b].y-en.y)*(bullets[b].y-en.y))<en.r+4){
+        bullets.splice(b,1);enemies.splice(e,1);score+=10;playTone(880,0.08,"square",0.06);
+        break;}}}
+  // stars scroll
+  for(var i=0;i<stars.length;i++){stars[i].y+=stars[i].v*dt;if(stars[i].y>H){stars[i].y=0;stars[i].x=Math.random()*W;}}
+  // enemies
+  for(var j=enemies.length-1;j>=0;j--){var e2=enemies[j];
+    e2.x+=e2.vx*dt;e2.y+=e2.vy*dt;
+    if(e2.x<20||e2.x>W-20){e2.vx*=-1;}
+    if(e2.y>H+40){enemies.splice(j,1);score=Math.max(0,score-5);continue;}
+    var dx=player.x-e2.x,dy=player.y-e2.y,d=Math.sqrt(dx*dx+dy*dy);
+    if(d<e2.r+player.r){state="over";shake=0.4;playTone(140,0.3,"sawtooth",0.15);
+      if(score>parseInt(localStorage.getItem("starBlasterHigh")||"0",10))
+        localStorage.setItem("starBlasterHigh",String(score));}}
+  // shields
+  for(var s=shields.length-1;s>=0;s--){var sh=shields[s];
+    sh.x+=Math.sin(performance.now()*0.001+sh.y)*20*dt;
+    var ds=Math.sqrt((player.x-sh.x)*(player.x-sh.x)+(player.y-sh.y)*(player.y-sh.y));
+    if(ds<40){state="over";shake=0.4;playTone(140,0.3,"sawtooth",0.15);
+      if(score>parseInt(localStorage.getItem("starBlasterHigh")||"0",10))
+        localStorage.setItem("starBlasterHigh",String(score));}}
+  if(enemies.length===0){wave++;newWave(wave);playTone(660,0.2,"triangle");score+=20;}
+  if(shake>0)shake-=dt;
+  if(score>high)high=score;
+}
+function draw(){
+  var g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,THEME.bg1);g.addColorStop(1,THEME.bg2);
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  for(var i=0;i<stars.length;i++){ctx.fillStyle=THEME.accent;ctx.globalAlpha=0.4+0.6*Math.sin(performance.now()*0.002+i);
+    ctx.fillRect(stars[i].x,stars[i].y,stars[i].s,stars[i].s);}
+  ctx.globalAlpha=1;
+  ctx.save();
+  if(shake>0)ctx.translate((Math.random()-0.5)*8,(Math.random()-0.5)*8);
+  if(state==="play"||state==="over"){
+    for(var s=0;s<shields.length;s++){var sh=shields[s];
+      ctx.fillStyle=THEME.shield;ctx.globalAlpha=0.15;
+      ctx.beginPath();ctx.arc(sh.x,sh.y,36,0,7);ctx.fill();ctx.globalAlpha=1;
+      ctx.strokeStyle=THEME.shield;ctx.lineWidth=2;ctx.beginPath();ctx.arc(sh.x,sh.y,36,0,7);ctx.stroke();}
+    for(var j=0;j<enemies.length;j++){var en=enemies[j];drawEnemy(en.x,en.y,en.r,en.kind);}
+    for(var b=0;b<bullets.length;b++){ctx.fillStyle=THEME.shot;
+      ctx.fillRect(bullets[b].x-2,bullets[b].y-6,4,12);}
+    drawPlayer(player.x,player.y);
+    // on-screen touch controls
+    ctx.fillStyle="rgba(0,0,0,0.3)";ctx.fillRect(0,H-56,W,56);
+    ctx.fillStyle="rgba(255,255,255,0.12)";ctx.beginPath();
+    ctx.arc(60,H-28,30,0,7);ctx.arc(W-60,H-28,30,0,7);ctx.fill();
+    ctx.fillStyle="#fff";ctx.font="16px sans-serif";ctx.textAlign="center";
+    ctx.fillText("◀  drag to move",120,H-20);ctx.fillText("TAP ▶ to SHOOT",W-120,H-20);
+  }
+  ctx.restore();
+  ctx.fillStyle="#000";ctx.fillRect(0,0,W,50);
+  ctx.fillStyle="#fff";ctx.font="bold 20px sans-serif";ctx.textAlign="left";
+  ctx.fillText("SCORE "+score,14,34);
+  ctx.textAlign="right";ctx.fillStyle=THEME.accent;ctx.fillText("WAVE "+wave,W-14,34);
+  ctx.fillStyle="#ffd54a";ctx.font="16px sans-serif";ctx.fillText("BEST "+high,W-14,20);
+  ctx.fillStyle="rgba(0,0,0,0.3)";ctx.fillRect(W-46,58,34,26);
+  ctx.fillStyle="#fff";ctx.font="16px sans-serif";ctx.textAlign="center";
+  ctx.fillText(soundOn?"🔊":"🔇",W-29,78);
+  if(state==="start"){ctx.fillStyle="rgba(0,0,0,0.5)";ctx.fillRect(0,0,W,H);
+    ctx.fillStyle="#fff";ctx.textAlign="center";
+    ctx.font="bold 46px sans-serif";ctx.fillText(GAME_NAME,W/2,180);
+    ctx.font="20px sans-serif";ctx.fillStyle=THEME.accent;
+    ctx.fillText("GOAL: clear every wave — blast all enemies!",W/2,225);
+    ctx.fillStyle="#e8e8e8";
+    ctx.fillText("◀ drag to move · TAP (or SPACE) to shoot",W/2,265);
+    ctx.fillText("TAP anywhere to START",W/2,340);
+  }
+  if(state==="over"){ctx.fillStyle="rgba(0,0,0,0.6)";ctx.fillRect(0,0,W,H);
+    ctx.fillStyle="#fff";ctx.textAlign="center";
+    ctx.font="bold 46px sans-serif";ctx.fillText("GAME OVER",W/2,190);
+    ctx.font="24px sans-serif";ctx.fillText("Score "+score,W/2,235);
+    ctx.fillStyle="#ffd54a";ctx.fillText("Best "+high,W/2,275);
+    ctx.fillStyle="#e8e8e8";ctx.fillText("TAP anywhere to play again",W/2,340);
+  }
+}
+var lastFrame=performance.now();
+function frame(t){var dt=Math.min((t-lastFrame)/1000,0.033);lastFrame=t;
+  update(dt);draw();requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+cv.addEventListener("pointerdown",function(e){initAudio();
+  var rect=cv.getBoundingClientRect();var px=e.clientX-rect.left,pw=rect.width;
+  var py=e.clientY-rect.top,ph=rect.height;
+  if(state==="over"){reset();state="play";return;}
+  if(state==="start"){state="play";playTone(440,0.08,"square");return;}
+  if(px/pw>0.72&&py/ph>0.72){soundOn=!soundOn;playTone(400,0.05,"square");return;}
+  targetShoot(e.clientX-rect.left,e.clientY-rect.top,pw,ph);
+});
+function targetShoot(px,py,pw,ph){
+  if(px/pw>0.5){touchShoot=true;}else{touchMove=(px/pw)*W;}
+  // initial: left half = move; right half (above the ORB)= shoot
+  if(px/pw<=0.5){touchMove=(px/pw)*W;touchShoot=false;}
+  else{touchShoot=true;touchMove=null;}
+}
+cv.addEventListener("pointermove",function(e){if(touchMove===null)return;
+  var rect=cv.getBoundingClientRect();var px=e.clientX-rect.left;
+  if(px/rect.width<=0.5){touchMove=(px/rect.width)*W;}});
+window.addEventListener("pointerup",function(){touchMove=null;touchShoot=false;});
+window.addEventListener("keydown",function(e){initAudio();
+  if(state==="over"&&(e.code==="Space"||e.code==="Enter")){reset();state="play";}
   else if(state==="start"&&(e.code==="Space"||e.code==="Enter")){state="play";}
   keys[e.code]=true;});
 window.addEventListener("keyup",function(e){keys[e.code]=false;});

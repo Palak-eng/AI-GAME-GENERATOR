@@ -26,6 +26,20 @@ from generator import GameGenerationError, generate_game
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./gamelab.db")
 
+
+def _normalize_database_url(url: str) -> str:
+    """Ensure SQLAlchemy uses the psycopg3 driver for Postgres URLs.
+
+    Render/Railway hand out "postgresql://..." URLs, but SQLAlchemy needs an
+    explicit driver dialect (postgresql+psycopg) to pick psycopg3.
+    """
+    if url.startswith("postgresql://") and "+" not in url.split("://")[0]:
+        return "postgresql+psycopg://" + url.split("://", 1)[1]
+    return url
+
+
+DATABASE_URL = _normalize_database_url(DATABASE_URL)
+
 engine = create_engine(
     DATABASE_URL,
     connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},

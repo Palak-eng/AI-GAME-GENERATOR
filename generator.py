@@ -533,8 +533,8 @@ def pick_template(prompt: str) -> str | None:
             "gather",
             "catch",
             "gem",
-            "stars",
-            "coins",
+            "star",
+            "coin",
             "candy",
             "fruit",
             "catch the",
@@ -569,12 +569,32 @@ def pick_template(prompt: str) -> str | None:
         ]
     ):
         return "runner"
+    # shooter-ish (checked last so collect/run take priority; requires explicit
+    # shoot-action words so generic themes like "space" don't hijack other ideas)
+    if any(
+        w in text
+        for w in [
+            "shoot",
+            "shooter",
+            "blast",
+            "laser",
+            "shooting",
+            "cannon",
+            "zap",
+            "invader",
+            "defend",
+            "defense",
+        ]
+    ):
+        return "shooter"
     return None
 
 
 def _template_by_key(key: str) -> str:
     if key == "collector":
         return templates.COLLECTOR
+    if key == "shooter":
+        return templates.SHOOTER
     return templates.RUNNER
 
 
@@ -595,10 +615,13 @@ change the game logic, physics, collision, scoring, levels, or controls. Only:
 1. Rewrite the "THEME VARS" block near the top of the <script>:
    - GAME_NAME → a fun title for this idea
    - THEME colors → fit the new theme and the requested art style
-   - drawPlayer / drawObstacle (runner) or drawPlayer/drawItem/drawEnemy
-     (collector) → redraw the shapes to fit the new characters
-     (e.g. if the idea is "cat collecting fish", the player becomes a cat shape,
-     the items become fish, enemies become dogs, etc.)
+   - Redraw the entity art functions to fit the new characters:
+       runner:   drawPlayer / drawObstacle
+       collector:drawPlayer / drawItem / drawEnemy
+       shooter:  drawPlayer / drawEnemy (keep the enemy type colors in THEME)
+     (e.g. for "cat collecting fish", the player becomes a cat shape, the items
+     become fish, the enemies become dogs; for "spaceship shoots aliens", the
+     player is a ship and the enemies are aliens.)
    Keep each entity drawn with real shapes (arc/lineTo paths), never a plain
    rectangle, and keep the ON-SCREEN controls and hint bar text accurate.
 2. Update the start-screen GOAL text and any flavor text to match the theme.
@@ -643,6 +666,7 @@ def _enhanced_blurb(prompt: str, key: str) -> str:
     kind = {
         "runner": "an exciting run-and-jump adventure",
         "collector": "a fun collect-and-dodge quest",
+        "shooter": "a fast-paced shoot-and-dodge battle",
     }[key]
     return f"A {prompt.strip()} game — {kind} with clear goals, rising levels, and big scores. 💫"
 

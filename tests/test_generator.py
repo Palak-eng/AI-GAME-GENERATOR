@@ -6,7 +6,7 @@ from generator import (
     is_code_complete,
     pick_template,
 )
-from templates import COLLECTOR, RUNNER
+from templates import COLLECTOR, RUNNER, SHOOTER
 
 
 class TestTemplates:
@@ -19,6 +19,16 @@ class TestTemplates:
         assert is_code_complete(COLLECTOR) is True
         assert not has_risky_canvas_api(COLLECTOR)
         assert "requestAnimationFrame" in COLLECTOR
+
+    def test_shooter_template_valid(self):
+        assert is_code_complete(SHOOTER) is True
+        assert not has_risky_canvas_api(SHOOTER)
+        assert "requestAnimationFrame" in SHOOTER
+
+    def test_pick_template_shooter(self):
+        assert pick_template("spaceship shoots lasers at aliens") == "shooter"
+        assert pick_template("a tank blasting enemies") == "shooter"
+        assert pick_template("defend the castle") == "shooter"
 
     def test_pick_template_runner(self):
         assert pick_template("a robot run and jump over obstacles") == "runner"
