@@ -212,10 +212,13 @@ ui = """
 st.markdown(ui, unsafe_allow_html=True)
 
 # ── API reachability check ──────────────────────────────────────────────────
+# Free-tier Render services sleep after ~15 min idle and take 10-20s to wake,
+# so a short timeout gives false "offline" errors. Use one longer timeout:
+# it awaits the wake-up, yet still fails fast on a genuinely down host.
 _online = False
 _online_error = None
 try:
-    if apiclient.requests.get(f"{apiclient.BASE_URL}/health", timeout=5).status_code == 200:
+    if apiclient.requests.get(f"{apiclient.BASE_URL}/health", timeout=30).status_code == 200:
         _online = True
 except Exception as e:  # noqa: BLE001
     _online_error = str(e)
