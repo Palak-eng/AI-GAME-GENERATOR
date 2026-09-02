@@ -146,16 +146,24 @@ Two free services, connected by the `API_BASE_URL`:
 
 #### Add Postgres so accounts & games persist (recommended)
 
-SQLite is wiped whenever a free Render service restarts. A free Postgres fixes
-that — and the app picks it up automatically:
+SQLite is wiped whenever a free Render service restarts. A free, **non-expiring**
+serverless Postgres fixes that — and the app picks it up automatically.
 
-1. Render → **New → Postgres** (free plan) → create it.
-2. In the Postgres dashboard, copy the **Internal Database URL**
-   (it starts with `postgresql://...`).
+**Option A — Neon (recommended, simplest):**
+1. Sign up at [neon.tech](https://neon.tech) → **Create project** → pick a region
+   close to your Render service → Free plan. (Neon's free tier does **not** expire.)
+2. Copy the **connection string** it shows (`postgresql://user:pass@host/db?sslmode=require`).
 3. On your **web service** → **Environment** → add:
-   - `DATABASE_URL = <paste the internal URL>`
-4. Save → Render redeploys. The app auto-detects Postgres (adds the `psycopg`
-   driver itself) and creates the tables on startup. Nothing else to change.
+   - `DATABASE_URL = <paste the Neon string>`
+4. Save → Render redeploys. Tables are created on startup automatically.
+
+**Option B — Render's own Postgres:** works the same way (add its Internal
+Database URL to `DATABASE_URL`) but Render's free Postgres is **temporary** and
+expires after a few months, so Neon is preferable.
+
+Either way no code changes: the app auto-adds the `psycopg` driver for any
+`postgresql://` URL and runs migrations on startup. Local dev still uses SQLite
+when no `DATABASE_URL` is set.
 
 ### Frontend → Streamlit Community Cloud
 
