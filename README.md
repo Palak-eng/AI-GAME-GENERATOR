@@ -143,6 +143,12 @@ Two free services, connected by the `API_BASE_URL`:
    - Plan: Free
 3. Environment: add `GEMINI_API_KEY=...`
 4. Verify: open `https://your-api.onrender.com/health` → `{"status":"ok"}`.
+5. **Keep the backend awake (recommended):** Render's free tier sleeps after
+   ~15 min of inactivity, which makes the first visitor wait ~10-20s (and can
+   show a false "backend offline" banner). Add a free **UptimeRobot** monitor
+   (HTTP(s) → `https://your-api.onrender.com/health`, every 5-10 min) and the
+   service never sleeps. You'll also get an email alert if it ever really goes
+   down.
 
 #### Add Postgres so accounts & games persist (recommended)
 
