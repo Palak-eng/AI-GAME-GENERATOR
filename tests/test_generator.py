@@ -41,6 +41,13 @@ class TestTemplates:
     def test_pick_template_none(self):
         assert pick_template("a wizard fights a dragon with spells") is None
 
+    def test_enhanced_blurb_drops_leading_article(self):
+        from generator import _enhanced_blurb
+
+        blurbs = [_enhanced_blurb("a cute cat run jump", "runner")]
+        assert not any("A a cute" in b for b in blurbs)
+        assert "A cute cat run jump game" in blurbs[0]
+
 
 class TestCleanCode:
     def test_strips_markdown_fences(self):

@@ -668,7 +668,10 @@ def _enhanced_blurb(prompt: str, key: str) -> str:
         "collector": "a fun collect-and-dodge quest",
         "shooter": "a fast-paced shoot-and-dodge battle",
     }[key]
-    return f"A {prompt.strip()} game — {kind} with clear goals, rising levels, and big scores. 💫"
+    title = prompt.strip()
+    # Avoid "A a cute cat" — drop a leading article so the sentence flows.
+    title = re.sub(r"^(a|an)\s+", "", title, flags=re.IGNORECASE)
+    return f"A {title} game — {kind} with clear goals, rising levels, and big scores. 💫"
 
 
 def generate_game(prompt: str, style: str = "arcade", on_progress=None) -> tuple[str, str]:
