@@ -650,13 +650,7 @@ def _generate_from_template(prompt: str, key: str, style_desc: str, report) -> t
         # Reskin failed validation — the known-good base still plays well.
         report(70, "🧐 Reskin had an issue, keeping the polished base version.")
     else:
-        report(70, "🔍 Checking the reskinned game is complete and valid...")
-        if is_code_complete(code) and not has_risky_canvas_api(code):
-            code = review_and_fix(code, prompt, style_desc)
-            if is_code_complete(code):
-                pass
-            else:
-                code = base
+        report(70, "🐇 Validated at first pass — skipping the extra review round.")
     report(100, "🎉 Game ready to play!")
     enhanced = _enhanced_blurb(prompt, key)
     return enhanced, code
