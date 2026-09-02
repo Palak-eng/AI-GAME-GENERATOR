@@ -64,10 +64,10 @@ belongs.
 
 **How game quality stays consistent:** instead of only letting the LLM invent a
 game from scratch, matching ideas are RESKINNED from hand-built, phone+PC-tested
-base templates in `templates.py` (runner, collector). Gemini rewrites the theme,
-colors, and characters while the proven game logic stays intact — then a
-self-review pass fixes any residual bugs. Unmatched ideas still generate fully
-from scratch.
+base templates in `templates.py` (runner, collector, shooter). Gemini rewrites
+the theme, colors, and characters while the proven game logic stays intact —
+then a self-review pass fixes any residual bugs. Unmatched ideas still generate
+fully from scratch.
 
 ### Why a real backend?
 
@@ -142,14 +142,20 @@ Two free services, connected by the `API_BASE_URL`:
    - Start: `uvicorn api:app --host 0.0.0.0 --port 10000`
    - Plan: Free
 3. Environment: add `GEMINI_API_KEY=...`
-4. **For persistent accounts/games** (SQLite is wiped on free-tier restarts):
-   add a free **Postgres** database on Render and set `DATABASE_URL` to its
-   internal connection string. The app reads it automatically — no code change.
-5. Verify: open `https://your-api.onrender.com/health` → `{"status":"ok"}`.
+4. Verify: open `https://your-api.onrender.com/health` → `{"status":"ok"}`.
 
-> One-click option: this repo includes a `render.yaml` blueprint. On Render,
-> **New → Blueprint** and point it at the repo to provision the web service
-> **and** Postgres together. Set `GEMINI_API_KEY` as an env var after.
+#### Add Postgres so accounts & games persist (recommended)
+
+SQLite is wiped whenever a free Render service restarts. A free Postgres fixes
+that — and the app picks it up automatically:
+
+1. Render → **New → Postgres** (free plan) → create it.
+2. In the Postgres dashboard, copy the **Internal Database URL**
+   (it starts with `postgresql://...`).
+3. On your **web service** → **Environment** → add:
+   - `DATABASE_URL = <paste the internal URL>`
+4. Save → Render redeploys. The app auto-detects Postgres (adds the `psycopg`
+   driver itself) and creates the tables on startup. Nothing else to change.
 
 ### Frontend → Streamlit Community Cloud
 
@@ -166,7 +172,7 @@ Two free services, connected by the `API_BASE_URL`:
 ## 🧪 CI / Development
 
 GitHub Actions runs on every push: **ruff lint**, **format check**, and
-**pytest** (39 tests covering the AI pipeline incl. the template engine + full
+**pytest** (44 tests covering the AI pipeline incl. the template engine + full
 API incl. auth, gallery, and game generation).
 
 ```bash
